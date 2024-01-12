@@ -460,7 +460,15 @@ loadFont("helvetiker_regular.typeface");
 class Player {
   constructor(start) {
     this.position = start;
+    this.targetPos = null;
     this.health = 2;
+  }
+}
+
+class Command {
+  constructor(apply, undo) {
+    this.apply = apply;
+    this.undo = undo;
   }
 }
 
@@ -477,37 +485,79 @@ const gameState = {
 const keyPressed = (event) => {
   console.log(event.code);
   switch (event.code) {
+    case "Backspace":
+      if (!gameState.leftCommands.length) {
+        return;
+      }
+      if (!gameState.rightCommands.length) {
+        return;
+      }
+      gameState.leftCommands.pop().undo();
+      gameState.rightCommands.pop().undo();
+      return;
     case "KeyA":
-      gameState.leftCurrentCommand = () =>
-        (gameState.leftPlayer.position = Math.max(
-          0,
-          gameState.leftPlayer.position - 1
-        ));
+      {
+        const position = gameState.leftPlayer.position;
+        const targetPos = gameState.leftPlayer.position - 1;
+        gameState.leftCurrentCommand = new Command(
+          () => {
+            gameState.leftPlayer.targetPos = Math.max(0, targetPos);
+          },
+          () => {
+            gameState.leftPlayer.position = position;
+          }
+        );
+      }
       break;
     case "KeyD":
-      gameState.leftCurrentCommand = () =>
-        (gameState.leftPlayer.position = Math.min(
-          gameState.rightPlayer.position - 1,
-          gameState.leftPlayer.position + 1
-        ));
+      {
+        const position = gameState.leftPlayer.position;
+        const targetPos = gameState.leftPlayer.position + 1;
+        gameState.leftCurrentCommand = new Command(
+          () => {
+            gameState.leftPlayer.targetPos = targetPos;
+          },
+          () => {
+            gameState.leftPlayer.position = position;
+          }
+        );
+      }
       break;
     case "Space":
       // left player
       return;
 
     case "ArrowLeft":
-      gameState.rightCurrentCommand = () =>
-        (gameState.rightPlayer.position = Math.max(
-          gameState.leftPlayer.position + 1,
-          gameState.rightPlayer.position - 1
-        ));
+      {
+        const position = gameState.rightPlayer.position;
+        const targetPos = gameState.rightPlayer.position - 1;
+        gameState.rightCurrentCommand = new Command(
+          () => {
+            gameState.rightPlayer.targetPos = targetPos;
+          },
+          () => {
+            gameState.rightPlayer.position = position;
+          }
+        );
+      }
       break;
     case "ArrowRight":
-      gameState.rightCurrentCommand = () =>
-        (gameState.rightPlayer.position = Math.min(
-          gameState.arena.length - 1,
-          gameState.rightPlayer.position + 1
-        ));
+      {
+        const position = gameState.rightPlayer.position;
+        const targetPos = gameState.rightPlayer.position + 1;
+        gameState.rightCurrentCommand = new Command(
+          () => {
+            gameState.rightPlayer.targetPos = Math.min(
+              targetPos,
+              gameState.arena.length - 1
+            );
+          },
+          () => {
+            gameState.rightPlayer.position = position;
+          }
+        );
+      }
+
       break;
     case "Enter":
       // right player
@@ -524,8 +574,16 @@ const updateGame = () => {
   if (!gameState.rightCurrentCommand) {
     return;
   }
-  gameState.leftCurrentCommand();
-  gameState.rightCurrentCommand();
+  gameState.leftCurrentCommand.apply();
+  gameState.rightCurrentCommand.apply();
+
+  // non-intersecting moves
+  if (gameState.leftPlayer.targetPos < gameState.rightPlayer.targetPos) {
+    gameState.leftPlayer.position = gameState.leftPlayer.targetPos;
+    gameState.rightPlayer.position = gameState.rightPlayer.targetPos;
+  }
+  gameState.leftPlayer.targetPos = null;
+  gameState.rightPlayer.targetPos = null;
   gameState.leftCommands.push(gameState.leftCurrentCommand);
   gameState.rightCommands.push(gameState.rightCurrentCommand);
   gameState.leftCurrentCommand = null;
