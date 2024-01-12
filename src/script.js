@@ -4,7 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
-import * as WEBRTC from "webrtc-adapter";
+import "webrtc-adapter";
 import GUI from "lil-gui";
 import { gsap } from "gsap";
 import Stats from "stats-js";
@@ -149,10 +149,11 @@ const mousePos = (event) => {
  * Event Handling
  */
 const eventLog = [];
-const loggedEvents = new Set(["pointerdown", "pointerup"]);
+const loggedEvents = new Set(["pointerdown", "pointerup", "keydown", "keyup"]);
 const universalEventHandler = (event) => {
   if (loggedEvents.has(event.type)) {
     eventLog.push([timeTracker.elapsedTime, event]);
+    console.log(eventLog);
   }
   switch (event.type) {
     case "resize":
@@ -180,11 +181,35 @@ const universalEventHandler = (event) => {
       }
       const pos = mousePos(event);
       break;
+    case "focus":
+    case "focusin":
+    case "focusout":
+    case "visibilitychange":
+      console.log(event);
     default:
       break;
   }
 };
-
+var vis = (function () {
+  var stateKey,
+    eventKey,
+    keys = {
+      hidden: "visibilitychange",
+      webkitHidden: "webkitvisibilitychange",
+      mozHidden: "mozvisibilitychange",
+      msHidden: "msvisibilitychange",
+    };
+  for (stateKey in keys) {
+    if (stateKey in document) {
+      eventKey = keys[stateKey];
+      break;
+    }
+  }
+  return function (c) {
+    if (c) document.addEventListener(eventKey, c);
+    return !document[stateKey];
+  };
+})();
 const events = new Set();
 for (const key in canvas) {
   if (/^on/.test(key)) {
@@ -192,6 +217,11 @@ for (const key in canvas) {
     events.add(eventType);
     window.addEventListener(eventType, universalEventHandler);
   }
+}
+for (const key in ["focusin", "focusout", "visibilitychange"]) {
+  const eventType = key;
+  events.add(eventType);
+  window.addEventListener(eventType, universalEventHandler);
 }
 
 /**
@@ -210,7 +240,14 @@ controls.enabled = true;
 
 const debugObject = { timeSpeed: 1.0 };
 const gui = new GUI();
-gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
+gui
+  .add(debugObject, "timeSpeed")
+  .min(0)
+  .max(3)
+  .step(0.1)
+  .onChange((v) => {
+    timeTracker.timeSpeed = v;
+  });
 
 /**
  * Loading overlay
@@ -235,7 +272,7 @@ composer.addPass(loadingScreen);
  */
 let progressRatio = 0.0;
 let currAnimation = null;
-let timeTracker = { enabled: false, deltaTime: 0, elapsedTime: 0.0 };
+let timeTracker = { timeSpeed: 0, deltaTime: 0, elapsedTime: 0.0 };
 const updateProgress = (progress) => {
   progressRatio = Math.max(progress, progressRatio);
   if (currAnimation) {
@@ -252,7 +289,7 @@ const updateProgress = (progress) => {
       duration: 0.2,
       value: progressRatio,
     });
-    timeline.set(timeTracker, { enabled: true });
+    timeline.set(timeTracker, { timeSpeed: debugObject.timeSpeed });
     timeline.to(loadingUniforms.uWidthY, {
       duration: 0.1,
       delay: 0.0,
@@ -470,10 +507,10 @@ const rotateBox = (time) => {
 const clock = new THREE.Clock();
 const tick = () => {
   stats.begin();
-  if (controls.enabled) {
-    timeTracker.elapsedTime =
-      timeTracker.elapsedTime + debugObject.timeSpeed * clock.getDelta();
-  }
+
+  timeTracker.timeSpeed = document.hasFocus() ? debugObject.timeSpeed : 0;
+  timeTracker.deltaTime = clock.getDelta();
+  timeTracker.elapsedTime += timeTracker.timeSpeed * timeTracker.deltaTime;
 
   // update controls
   controls.update();
