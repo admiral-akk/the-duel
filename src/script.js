@@ -319,7 +319,6 @@ signaling.onmessage = (e) => {
       break;
   }
 };
-signaling.postMessage({ type: "ready" });
 
 const connect = async () => {
   await createPeerConnection();
