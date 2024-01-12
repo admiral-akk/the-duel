@@ -149,11 +149,10 @@ const mousePos = (event) => {
  * Event Handling
  */
 const eventLog = [];
-const loggedEvents = new Set(["pointerdown", "pointerup", "keydown", "keyup"]);
+const loggedEvents = new Set(["pointerdown", "pointerup", "keyup"]);
 const universalEventHandler = (event) => {
   if (loggedEvents.has(event.type)) {
     eventLog.push([timeTracker.elapsedTime, event]);
-    console.log(eventLog);
   }
   switch (event.type) {
     case "resize":
@@ -181,35 +180,14 @@ const universalEventHandler = (event) => {
       }
       const pos = mousePos(event);
       break;
-    case "focus":
-    case "focusin":
-    case "focusout":
-    case "visibilitychange":
-      console.log(event);
+    case "keyup":
+      keyPressed(event);
+      break;
     default:
       break;
   }
 };
-var vis = (function () {
-  var stateKey,
-    eventKey,
-    keys = {
-      hidden: "visibilitychange",
-      webkitHidden: "webkitvisibilitychange",
-      mozHidden: "mozvisibilitychange",
-      msHidden: "msvisibilitychange",
-    };
-  for (stateKey in keys) {
-    if (stateKey in document) {
-      eventKey = keys[stateKey];
-      break;
-    }
-  }
-  return function (c) {
-    if (c) document.addEventListener(eventKey, c);
-    return !document[stateKey];
-  };
-})();
+
 const events = new Set();
 for (const key in canvas) {
   if (/^on/.test(key)) {
@@ -218,18 +196,12 @@ for (const key in canvas) {
     window.addEventListener(eventType, universalEventHandler);
   }
 }
-for (const key in ["focusin", "focusout", "visibilitychange"]) {
-  const eventType = key;
-  events.add(eventType);
-  window.addEventListener(eventType, universalEventHandler);
-}
 
 /**
  * Setup camera
  */
-camera.position.x = 1;
 camera.position.y = 1;
-camera.position.z = 1;
+camera.position.z = 1.5;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = true;
@@ -476,29 +448,122 @@ function onReceiveChannelStateChange() {
  * Loaded Objects
  */
 loadTexture("matcap01");
-loadTextureFromUrl("https://source.unsplash.com/random/100x100?sig=1");
+loadTexture("matcap02");
+loadTexture("matcap03");
 loadSound("swoosh01");
 loadFont("helvetiker_regular.typeface");
 
 /**
- *  Box
+ * Game Rules
  */
-const boxG = new THREE.BoxGeometry();
-const boxM = new THREE.ShaderMaterial({
-  vertexShader: matcapVertexShader,
-  fragmentShader: matcapFragmentShader,
-  uniforms: {
-    uMatcap: {
-      type: "sampler2D",
-      value: textures.get("matcap01"),
-    },
-  },
-});
-const boxMesh = new THREE.Mesh(boxG, boxM);
-scene.add(boxMesh);
 
-const rotateBox = (time) => {
-  boxMesh.setRotationFromEuler(new THREE.Euler(0, time, 0));
+class Player {
+  constructor(start) {
+    this.position = start;
+    this.health = 2;
+  }
+}
+
+const gameState = {
+  leftPlayer: new Player(1),
+  rightPlayer: new Player(3),
+  arena: [0, 0, 0, 0, 0],
+  leftCommands: [],
+  rightCommands: [],
+};
+
+const keyPressed = (event) => {
+  console.log(event.code);
+  switch (event.code) {
+    case "KeyA":
+      gameState.leftPlayer.position = Math.max(
+        0,
+        gameState.leftPlayer.position - 1
+      );
+      break;
+    case "KeyD":
+      gameState.leftPlayer.position = Math.min(
+        gameState.rightPlayer.position - 1,
+        gameState.leftPlayer.position + 1
+      );
+      break;
+    case "Space":
+      // left player
+      return;
+
+    case "ArrowLeft":
+      gameState.rightPlayer.position = Math.max(
+        gameState.leftPlayer.position + 1,
+        gameState.rightPlayer.position - 1
+      );
+      break;
+    case "ArrowRight":
+      gameState.rightPlayer.position = Math.min(
+        gameState.arena.length - 1,
+        gameState.rightPlayer.position + 1
+      );
+      break;
+    case "Enter":
+      // right player
+      return;
+    default:
+      return;
+  }
+};
+
+/**
+ * Game Graphics
+ */
+
+const playerMesh = (matcapTexture) => {
+  const geo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: matcapVertexShader,
+    fragmentShader: matcapFragmentShader,
+    uniforms: {
+      uMatcap: {
+        type: "sampler2D",
+        value: matcapTexture,
+      },
+    },
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.y = Math.PI / 4;
+  scene.add(mesh);
+  return mesh;
+};
+
+const tileMesh = (matcapTexture) => {
+  const geo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: matcapVertexShader,
+    fragmentShader: matcapFragmentShader,
+    uniforms: {
+      uMatcap: {
+        type: "sampler2D",
+        value: matcapTexture,
+      },
+    },
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+  return mesh;
+};
+
+const leftPlayer = playerMesh(textures.get("matcap01"));
+const rightPlayer = playerMesh(textures.get("matcap02"));
+const tiles = gameState.arena.map((v, i) => {
+  const mesh = tileMesh(textures.get("matcap03"));
+  mesh.position.x = i - (gameState.arena.length - 1) / 2;
+  mesh.position.y = -0.4;
+  return mesh;
+});
+
+const animateGame = (elapsedTime, deltaTime) => {
+  leftPlayer.position.x =
+    gameState.leftPlayer.position - (gameState.arena.length - 1) / 2;
+  rightPlayer.position.x =
+    gameState.rightPlayer.position - (gameState.arena.length - 1) / 2;
 };
 
 /**
@@ -516,7 +581,7 @@ const tick = () => {
   controls.update();
 
   // Render scene
-  rotateBox(timeTracker.elapsedTime);
+  animateGame();
   composer.render();
 
   // Call tick again on the next frame
