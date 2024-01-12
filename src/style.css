@@ -1,0 +1,27 @@
+* {
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  outline: none;
+}
+
+.relative {
+  user-select: none;
+  position: relative;
+}
+
+.ui {
+  position: absolute /* needs to be important for fullscreen */ !important;
+  pointer-events: none;
+}
+
+html,
+body {
+  overflow: hidden;
+  background-color: black;
+}

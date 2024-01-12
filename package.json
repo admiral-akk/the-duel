@@ -1,0 +1,23 @@
+{
+  "name": "3jsbase",
+  "version": "1.0.0",
+  "description": "Base template to start working from.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "Kuba Karpierz",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^4.5.0",
+    "vite-plugin-glsl": "^1.2.1"
+  },
+  "dependencies": {
+    "gsap": "^3.12.4",
+    "lil-gui": "^0.19.0",
+    "three": "^0.159.0",
+    "stats-js": "^1.0.1"
+  }
+}
