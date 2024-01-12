@@ -495,6 +495,22 @@ const keyPressed = (event) => {
       gameState.leftCommands.pop().undo();
       gameState.rightCommands.pop().undo();
       return;
+
+    case "KeyS":
+    case "KeyW":
+      {
+        const position = gameState.leftPlayer.position;
+        const targetPos = gameState.leftPlayer.position;
+        gameState.leftCurrentCommand = new Command(
+          () => {
+            gameState.leftPlayer.targetPos = Math.max(0, targetPos);
+          },
+          () => {
+            gameState.leftPlayer.position = position;
+          }
+        );
+      }
+      break;
     case "KeyA":
       {
         const position = gameState.leftPlayer.position;
@@ -527,6 +543,21 @@ const keyPressed = (event) => {
       // left player
       return;
 
+    case "ArrowUp":
+    case "ArrowDown":
+      {
+        const position = gameState.rightPlayer.position;
+        const targetPos = gameState.rightPlayer.position;
+        gameState.rightCurrentCommand = new Command(
+          () => {
+            gameState.rightPlayer.targetPos = targetPos;
+          },
+          () => {
+            gameState.rightPlayer.position = position;
+          }
+        );
+      }
+      break;
     case "ArrowLeft":
       {
         const position = gameState.rightPlayer.position;
