@@ -468,6 +468,8 @@ const gameState = {
   leftPlayer: new Player(1),
   rightPlayer: new Player(3),
   arena: [0, 0, 0, 0, 0],
+  leftCurrentCommand: null,
+  rightCurrentCommand: null,
   leftCommands: [],
   rightCommands: [],
 };
@@ -476,32 +478,36 @@ const keyPressed = (event) => {
   console.log(event.code);
   switch (event.code) {
     case "KeyA":
-      gameState.leftPlayer.position = Math.max(
-        0,
-        gameState.leftPlayer.position - 1
-      );
+      gameState.leftCurrentCommand = () =>
+        (gameState.leftPlayer.position = Math.max(
+          0,
+          gameState.leftPlayer.position - 1
+        ));
       break;
     case "KeyD":
-      gameState.leftPlayer.position = Math.min(
-        gameState.rightPlayer.position - 1,
-        gameState.leftPlayer.position + 1
-      );
+      gameState.leftCurrentCommand = () =>
+        (gameState.leftPlayer.position = Math.min(
+          gameState.rightPlayer.position - 1,
+          gameState.leftPlayer.position + 1
+        ));
       break;
     case "Space":
       // left player
       return;
 
     case "ArrowLeft":
-      gameState.rightPlayer.position = Math.max(
-        gameState.leftPlayer.position + 1,
-        gameState.rightPlayer.position - 1
-      );
+      gameState.rightCurrentCommand = () =>
+        (gameState.rightPlayer.position = Math.max(
+          gameState.leftPlayer.position + 1,
+          gameState.rightPlayer.position - 1
+        ));
       break;
     case "ArrowRight":
-      gameState.rightPlayer.position = Math.min(
-        gameState.arena.length - 1,
-        gameState.rightPlayer.position + 1
-      );
+      gameState.rightCurrentCommand = () =>
+        (gameState.rightPlayer.position = Math.min(
+          gameState.arena.length - 1,
+          gameState.rightPlayer.position + 1
+        ));
       break;
     case "Enter":
       // right player
@@ -509,6 +515,21 @@ const keyPressed = (event) => {
     default:
       return;
   }
+};
+
+const updateGame = () => {
+  if (!gameState.leftCurrentCommand) {
+    return;
+  }
+  if (!gameState.rightCurrentCommand) {
+    return;
+  }
+  gameState.leftCurrentCommand();
+  gameState.rightCurrentCommand();
+  gameState.leftCommands.push(gameState.leftCurrentCommand);
+  gameState.rightCommands.push(gameState.rightCurrentCommand);
+  gameState.leftCurrentCommand = null;
+  gameState.rightCurrentCommand = null;
 };
 
 /**
@@ -579,6 +600,7 @@ const tick = () => {
 
   // update controls
   controls.update();
+  updateGame();
 
   // Render scene
   animateGame();
