@@ -457,10 +457,76 @@ loadFont("helvetiker_regular.typeface");
  * Game Rules
  */
 
+class Game {
+  constructor() {
+    this.state = new GameState();
+    this.moveHistory = [];
+    this.selectedMoves = new Map();
+  }
+
+  apply() {
+    const m0 = this.selectedMoves.get(0);
+    const m1 = this.selectedMoves.get(1);
+    if (!m0 || !m1) {
+      return;
+    }
+    const moves = [m0, m1];
+    this.selectedMoves.clear();
+    this.state.apply(moves);
+    this.moveHistory.push(moves);
+  }
+
+  undo() {
+    this.selectedMoves.clear();
+    const moves = this.moveHistory.pop();
+    if (!moves) {
+      return;
+    }
+    this.state.undo(moves);
+  }
+
+  player(index) {
+    return this.state.players[index];
+  }
+}
+
+const clamp = (num, min, max) => Math.max(min, Math.min(num, max));
+
+// the state at a particular moment in the game
+// it does not care how you got here.
+class GameState {
+  constructor() {
+    this.arenaSize = 6;
+    const mid = (this.arenaSize - 1) / 2;
+    this.players = [
+      new Player(Math.floor(mid) - 1),
+      new Player(Math.ceil(mid) + 1),
+    ];
+  }
+
+  apply(moves) {
+    moves[0].apply(this.players[0], this.players[1]);
+    moves[1].apply(this.players[1], this.players[0]);
+    // keep players in bounds
+    this.players.forEach((p) => {
+      p.nextPosition = clamp(p.nextPosition, 0, this.arenaSize - 1);
+    });
+    if (this.players[0].nextPosition < this.players[1].nextPosition) {
+      this.players[0].position = this.players[0].nextPosition;
+      this.players[1].position = this.players[1].nextPosition;
+    }
+  }
+
+  undo(moves) {
+    moves[0].undo(this.players[0], this.players[1]);
+    moves[1].undo(this.players[1], this.players[0]);
+  }
+}
+
 class Player {
   constructor(start) {
     this.position = start;
-    this.targetPos = null;
+    this.nextPosition = null;
     this.health = 2;
   }
 }
@@ -471,17 +537,17 @@ class Command {
     this.params = params;
   }
 
-  apply(player) {
+  apply(player, opponent) {
     switch (this.type) {
       case "move":
-        player.targetPos = this.params.targetPos;
+        player.nextPosition = this.params.nextPosition;
         return;
       default:
         return;
     }
   }
 
-  undo(player) {
+  undo(player, opponent) {
     switch (this.type) {
       case "move":
         player.position = this.params.position;
@@ -492,96 +558,77 @@ class Command {
   }
 }
 
-const gameState = {
-  leftPlayer: new Player(1),
-  rightPlayer: new Player(3),
-  arena: [0, 0, 0, 0, 0],
-  leftCurrentCommand: null,
-  rightCurrentCommand: null,
-  leftCommands: [],
-  rightCommands: [],
+const game = new Game();
+const gameState = game.gameState;
+
+const player = (eventCode) => {
+  switch (eventCode) {
+    case "KeyW":
+    case "KeyA":
+    case "KeyS":
+    case "KeyD":
+    case "Space":
+      return 0;
+    case "ArrowUp":
+    case "ArrowLeft":
+    case "ArrowDown":
+    case "ArrowRight":
+    case "Enter":
+      return 1;
+    default:
+      return 0;
+  }
+};
+
+const offset = (eventCode) => {
+  switch (eventCode) {
+    case "ArrowUp":
+    case "ArrowDown":
+    case "KeyW":
+    case "KeyS":
+      return 0;
+    case "ArrowLeft":
+    case "KeyA":
+      return -1;
+    case "ArrowRight":
+    case "KeyD":
+      return 1;
+    default:
+      return 0;
+  }
 };
 
 const keyPressed = (event) => {
-  console.log(event.code);
-  switch (event.code) {
+  const eventCode = event.code;
+  console.log(eventCode);
+  switch (eventCode) {
     case "Backspace":
-      if (!gameState.leftCommands.length) {
-        return;
-      }
-      if (!gameState.rightCommands.length) {
-        return;
-      }
-      gameState.leftCommands.pop().undo(gameState.leftPlayer);
-      gameState.rightCommands.pop().undo(gameState.rightPlayer);
+      game.undo();
       return;
-
     case "KeyS":
     case "KeyW":
-      {
-        const position = gameState.leftPlayer.position;
-        gameState.leftCurrentCommand = new Command("move", {
-          targetPos: position,
-          position: position,
-        });
-      }
-      break;
     case "KeyA":
-      {
-        const position = gameState.leftPlayer.position;
-        const targetPos = gameState.leftPlayer.position - 1;
-        gameState.leftCurrentCommand = new Command("move", {
-          targetPos: Math.max(0, targetPos),
-          position: position,
-        });
-      }
-      break;
     case "KeyD":
+    case "ArrowUp":
+    case "ArrowDown":
+    case "ArrowLeft":
+    case "ArrowRight":
       {
-        const position = gameState.leftPlayer.position;
-        const targetPos = gameState.leftPlayer.position + 1;
-        gameState.leftCurrentCommand = new Command("move", {
-          targetPos: Math.max(0, targetPos),
-          position: position,
-        });
+        const playerIndex = player(eventCode);
+        const positionOffset = offset(eventCode);
+        const position = game.player(playerIndex).position;
+        game.selectedMoves.set(
+          playerIndex,
+          new Command("move", {
+            nextPosition: position + positionOffset,
+            position: position,
+          })
+        );
       }
       break;
     case "Space":
       // left player
       return;
-
-    case "ArrowUp":
-    case "ArrowDown":
-      {
-        const position = gameState.leftPlayer.position;
-        gameState.rightCurrentCommand = new Command("move", {
-          targetPos: position,
-          position: position,
-        });
-      }
-      break;
-    case "ArrowLeft":
-      {
-        const position = gameState.rightPlayer.position;
-        gameState.rightCurrentCommand = new Command("move", {
-          targetPos: gameState.rightPlayer.position - 1,
-          position: position,
-        });
-      }
-      break;
-    case "ArrowRight":
-      {
-        const position = gameState.rightPlayer.position;
-        gameState.rightCurrentCommand = new Command("move", {
-          targetPos: Math.min(
-            gameState.rightPlayer.position + 1,
-            gameState.arena.length - 1
-          ),
-          position: position,
-        });
-      }
-
-      break;
     case "Enter":
       // right player
       return;
@@ -591,26 +638,7 @@ const keyPressed = (event) => {
 };
 
 const updateGame = () => {
-  if (!gameState.leftCurrentCommand) {
-    return;
-  }
-  if (!gameState.rightCurrentCommand) {
-    return;
-  }
-  gameState.leftCurrentCommand.apply(gameState.leftPlayer);
-  gameState.rightCurrentCommand.apply(gameState.rightPlayer);
-
-  // non-intersecting moves
-  if (gameState.leftPlayer.targetPos < gameState.rightPlayer.targetPos) {
-    gameState.leftPlayer.position = gameState.leftPlayer.targetPos;
-    gameState.rightPlayer.position = gameState.rightPlayer.targetPos;
-  }
-  gameState.leftPlayer.targetPos = null;
-  gameState.rightPlayer.targetPos = null;
-  gameState.leftCommands.push(gameState.leftCurrentCommand);
-  gameState.rightCommands.push(gameState.rightCurrentCommand);
-  gameState.leftCurrentCommand = null;
-  gameState.rightCurrentCommand = null;
+  game.apply();
 };
 
 /**
@@ -654,18 +682,20 @@ const tileMesh = (matcapTexture) => {
 
 const leftPlayer = playerMesh(textures.get("matcap01"));
 const rightPlayer = playerMesh(textures.get("matcap02"));
-const tiles = gameState.arena.map((v, i) => {
-  const mesh = tileMesh(textures.get("matcap03"));
-  mesh.position.x = i - (gameState.arena.length - 1) / 2;
-  mesh.position.y = -0.4;
-  return mesh;
-});
+const tiles = Array(game.state.arenaSize)
+  .fill(0)
+  .map((v, i) => {
+    const mesh = tileMesh(textures.get("matcap03"));
+    mesh.position.x = i - (game.state.arenaSize - 1) / 2;
+    mesh.position.y = -0.4;
+    return mesh;
+  });
 
 const animateGame = (elapsedTime, deltaTime) => {
   leftPlayer.position.x =
-    gameState.leftPlayer.position - (gameState.arena.length - 1) / 2;
+    game.player(0).position - (game.state.arenaSize - 1) / 2;
   rightPlayer.position.x =
-    gameState.rightPlayer.position - (gameState.arena.length - 1) / 2;
+    game.player(1).position - (game.state.arenaSize - 1) / 2;
 };
 
 /**
