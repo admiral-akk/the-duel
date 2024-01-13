@@ -505,21 +505,26 @@ class GameState {
   }
 
   apply(moves) {
-    moves[0].apply(this.players[0], this.players[1]);
-    moves[1].apply(this.players[1], this.players[0]);
+    // apply every move
+    // moves shouldn't change things, just indicate intention
+    moves.forEach((m, i) =>
+      m.apply(this.players[i], this.players[(i + 1) % 2])
+    );
     // keep players in bounds
-    this.players.forEach((p) => {
-      p.nextPosition = clamp(p.nextPosition, 0, this.arenaSize - 1);
-    });
+    this.players.forEach(
+      (p) => (p.nextPosition = clamp(p.nextPosition, 0, this.arenaSize - 1))
+    );
+    // resolve movement
     if (this.players[0].nextPosition < this.players[1].nextPosition) {
-      this.players[0].position = this.players[0].nextPosition;
-      this.players[1].position = this.players[1].nextPosition;
+      this.players.forEach((p) => {
+        p.position = p.nextPosition;
+        p.nextPosition = null;
+      });
     }
   }
 
   undo(moves) {
-    moves[0].undo(this.players[0], this.players[1]);
-    moves[1].undo(this.players[1], this.players[0]);
+    moves.forEach((m, i) => m.undo(this.players[i], this.players[(i + 1) % 2]));
   }
 }
 
