@@ -490,7 +490,7 @@ class Game {
   }
 }
 
-const clamp = (num, min, max) => Math.max(min, Math.min(num, max));
+Math.clamp = (num, min, max) => Math.max(min, Math.min(num, max));
 
 // the state at a particular moment in the game
 // it does not care how you got here.
@@ -512,7 +512,8 @@ class GameState {
     );
     // keep players in bounds
     this.players.forEach(
-      (p) => (p.nextPosition = clamp(p.nextPosition, 0, this.arenaSize - 1))
+      (p) =>
+        (p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1))
     );
     // resolve movement
     if (this.players[0].nextPosition < this.players[1].nextPosition) {
