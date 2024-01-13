@@ -515,20 +515,16 @@ class GameState {
     );
 
     // keep players in bounds
-    this.players
-      .filter((p) => p.nextPosition !== null)
-      .forEach(
-        (p) =>
-          (p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1))
-      );
+    this.players.forEach((p) => {
+      p.nextPosition = p.nextPosition === null ? p.position : p.nextPosition;
+      p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1);
+    });
     // resolve movement
     if (this.players[0].nextPosition < this.players[1].nextPosition) {
-      this.players
-        .filter((p) => p.nextPosition !== null)
-        .forEach((p) => {
-          p.position = p.nextPosition;
-          p.nextPosition = null;
-        });
+      this.players.forEach((p) => {
+        p.position = p.nextPosition;
+        p.nextPosition = null;
+      });
     }
 
     // resolve damage
@@ -600,8 +596,6 @@ class Command {
     }
   }
 }
-
-const game = new Game();
 
 const player = (eventCode) => {
   switch (eventCode) {
@@ -682,7 +676,7 @@ const keyPressed = (event) => {
   }
 };
 
-const updateGame = () => game.apply();
+const game = new Game();
 
 /**
  * Game Graphics
@@ -754,7 +748,7 @@ const tick = () => {
 
   // update controls
   controls.update();
-  updateGame();
+  game.apply();
 
   // Render scene
   animateGame();
