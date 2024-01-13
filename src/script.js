@@ -17,6 +17,11 @@ import matcapVertexShader from "./shaders/matcap/vertex.glsl";
 import matcapFragmentShader from "./shaders/matcap/fragment.glsl";
 
 /**
+ * Helpers
+ */
+Math.clamp = (num, min, max) => Math.max(min, Math.min(num, max));
+
+/**
  * Core objects
  */
 const container = document.querySelector("div.container");
@@ -490,8 +495,6 @@ class Game {
   }
 }
 
-Math.clamp = (num, min, max) => Math.max(min, Math.min(num, max));
-
 // the state at a particular moment in the game
 // it does not care how you got here.
 class GameState {
@@ -565,7 +568,6 @@ class Command {
 }
 
 const game = new Game();
-const gameState = game.gameState;
 
 const player = (eventCode) => {
   switch (eventCode) {
@@ -643,9 +645,7 @@ const keyPressed = (event) => {
   }
 };
 
-const updateGame = () => {
-  game.apply();
-};
+const updateGame = () => game.apply();
 
 /**
  * Game Graphics
@@ -690,7 +690,7 @@ const leftPlayer = playerMesh(textures.get("matcap01"));
 const rightPlayer = playerMesh(textures.get("matcap02"));
 const tiles = Array(game.state.arenaSize)
   .fill(0)
-  .map((v, i) => {
+  .map((_, i) => {
     const mesh = tileMesh(textures.get("matcap03"));
     mesh.position.x = i - (game.state.arenaSize - 1) / 2;
     mesh.position.y = -0.4;
