@@ -511,20 +511,38 @@ class GameState {
     // apply every move
     // moves shouldn't change things, just indicate intention
     moves.forEach((m, i) =>
-      m.apply(this.players[i], this.players[(i + 1) % 2])
+      m.applyMove(this.players[i], this.players[(i + 1) % 2])
     );
+
     // keep players in bounds
-    this.players.forEach(
-      (p) =>
-        (p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1))
-    );
+    this.players
+      .filter((p) => p.nextPosition !== null)
+      .forEach(
+        (p) =>
+          (p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1))
+      );
     // resolve movement
     if (this.players[0].nextPosition < this.players[1].nextPosition) {
-      this.players.forEach((p) => {
-        p.position = p.nextPosition;
-        p.nextPosition = null;
-      });
+      this.players
+        .filter((p) => p.nextPosition !== null)
+        .forEach((p) => {
+          p.position = p.nextPosition;
+          p.nextPosition = null;
+        });
     }
+
+    // resolve damage
+    moves.forEach((m, i) =>
+      m.applyAttack(this.players[i], this.players[(i + 1) % 2])
+    );
+
+    // resolve damage
+    this.players.forEach((p) => {
+      p.health -= p.isHit ? 1 : 0;
+      p.isHit = false;
+    });
+
+    this.players.forEach((p) => console.log(p));
   }
 
   undo(moves) {
@@ -537,6 +555,7 @@ class Player {
     this.position = start;
     this.nextPosition = null;
     this.health = 2;
+    this.isHit = false;
   }
 }
 
@@ -546,10 +565,21 @@ class Command {
     this.params = params;
   }
 
-  apply(player, opponent) {
+  applyMove(player, opponent) {
     switch (this.type) {
       case "move":
         player.nextPosition = this.params.nextPosition;
+        return;
+      default:
+        return;
+    }
+  }
+
+  applyAttack(player, opponent) {
+    switch (this.type) {
+      case "attack":
+        const distance = Math.abs(player.position - opponent.position);
+        opponent.isHit = distance === this.params.attackRange;
         return;
       default:
         return;
@@ -560,6 +590,10 @@ class Command {
     switch (this.type) {
       case "move":
         player.position = this.params.position;
+        return;
+      case "attack":
+        opponent.health = this.params.health;
+        opponent.isHit = false;
         return;
       default:
         return;
@@ -609,6 +643,7 @@ const offset = (eventCode) => {
 const keyPressed = (event) => {
   const eventCode = event.code;
   console.log(eventCode);
+  const playerIndex = player(eventCode);
   switch (eventCode) {
     case "Backspace":
       game.undo();
@@ -622,7 +657,6 @@ const keyPressed = (event) => {
     case "ArrowLeft":
     case "ArrowRight":
       {
-        const playerIndex = player(eventCode);
         const positionOffset = offset(eventCode);
         const position = game.player(playerIndex).position;
         game.selectedMoves.set(
@@ -635,10 +669,13 @@ const keyPressed = (event) => {
       }
       break;
     case "Space":
-      // left player
-      return;
     case "Enter":
-      // right player
+      game.selectedMoves.set(
+        playerIndex,
+        new Command("attack", {
+          attackRange: 1,
+        })
+      );
       return;
     default:
       return;
