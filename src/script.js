@@ -297,14 +297,12 @@ const initLoadingAnimation = () => {
 
 /**
  * Networking
- *
- * Logic largely replicated from: https://webrtc.github.io/samples/
  */
 let pc;
 let sendChannel;
 let receiveChannel;
 
-const signaling = new BroadcastChannel("webrtc");
+const signaling = new BroadcastChannel("webrtc2124");
 signaling.onmessage = (e) => {
   switch (e.data.type) {
     case "offer":
@@ -342,8 +340,10 @@ const connect = async () => {
   sendChannel.onclose = onSendChannelStateChange;
 
   const offer = await pc.createOffer();
+  console.log("proposed offer", offer.sdp);
   signaling.postMessage({ type: "offer", sdp: offer.sdp });
   await pc.setLocalDescription(offer);
+  console.log("set description");
 };
 
 const close = async () => {
@@ -362,8 +362,12 @@ async function hangup() {
 }
 
 function createPeerConnection() {
-  pc = new RTCPeerConnection();
+  console.log("createPeerConnection");
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+  });
   pc.onicecandidate = (e) => {
+    console.log("onicecandidate", e);
     const message = {
       type: "candidate",
       candidate: null,
@@ -378,6 +382,8 @@ function createPeerConnection() {
 }
 
 async function handleOffer(offer) {
+  console.log("handle offer", offer.sdp);
+  return;
   if (pc) {
     console.error("existing peerconnection");
     return;
@@ -400,6 +406,8 @@ async function handleAnswer(answer) {
 }
 
 async function handleCandidate(candidate) {
+  console.log("handleCandidate", candidate);
+  return;
   if (!pc) {
     console.error("no peerconnection");
     return;
@@ -424,7 +432,7 @@ function sendData() {
 }
 
 function receiveChannelCallback(event) {
-  console.log("Receive Channel Callback");
+  console.log("Receive Channel Callback", event.data);
   receiveChannel = event.channel;
   receiveChannel.onmessage = onReceiveChannelMessageCallback;
   receiveChannel.onopen = onReceiveChannelStateChange;
@@ -432,11 +440,11 @@ function receiveChannelCallback(event) {
 }
 
 function onReceiveChannelMessageCallback(event) {
-  console.log("Received Message", event.data);
+  console.log("Received onReceiveChannelMessageCallback", event.data);
 }
 
 function onSendChannelMessageCallback(event) {
-  console.log("Received Message", event.data);
+  console.log("Received onSendChannelMessageCallback", event.data);
 }
 
 function onSendChannelStateChange() {
@@ -639,6 +647,12 @@ const keyPressed = (event) => {
   console.log(eventCode);
   const playerIndex = player(eventCode);
   switch (eventCode) {
+    case "Digit1":
+      connect();
+      return;
+    case "Digit2":
+      sendData();
+      return;
     case "Backspace":
       game.undo();
       return;
