@@ -320,14 +320,14 @@ connection.ondatachannel = (event) => {
   };
 };
 
-connection.onconnectionstatechange = (event) =>
+connection.onconnectionstatechange = (event) => {
   console.log("onconnectionstatechange", event);
-connection.oniceconnectionstatechange = (event) => {
-  console.log("oniceconnectionstatechange", event);
   if (event.target && event.target.connectionState === "connected") {
     client.playerIndex = server ? 0 : 1;
   }
 };
+connection.oniceconnectionstatechange = (event) =>
+  console.log("oniceconnectionstatechange", event);
 
 async function createOffer() {
   server = new GameServer();
@@ -389,7 +389,11 @@ loadFont("helvetiker_regular.typeface");
  * Game Rules
  */
 
-// This represents the actual state of the game - each player sends messages to it and recieves updates from it for their local client.
+/**
+ * This represents the actual state of the game.
+ * Each player sends messages to it and recieves updates from it for their local client.
+ * It happens to live on one player's machine, but they shouldn't read from it directly.
+ */
 class GameServer {
   constructor() {
     this.game = new Game();
@@ -656,7 +660,7 @@ const getPlayer = (eventCode) => {
     case "Enter":
       return 1;
     default:
-      return 0;
+      return -2;
   }
 };
 
@@ -707,6 +711,10 @@ const keyPressed = (event) => {
     case "ArrowLeft":
     case "ArrowRight":
       {
+        console.log(playerIndex, client.playerIndex);
+        if (playerIndex !== client.playerIndex) {
+          return;
+        }
         const positionOffset = offset(eventCode);
         const position = game.getPlayer(playerIndex).position;
 
@@ -721,6 +729,10 @@ const keyPressed = (event) => {
       break;
     case "Space":
     case "Enter":
+      console.log(playerIndex, client.playerIndex);
+      if (playerIndex !== client.playerIndex) {
+        return;
+      }
       sendEventToServer({
         type: "selectMove",
         move: new Command("attack", playerIndex, {
