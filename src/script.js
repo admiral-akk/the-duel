@@ -413,13 +413,18 @@ class GameServer {
     }
   }
 
+  sendEventToClients(event) {
+    client.handle(event);
+    sendData({ target: "client", event: event });
+  }
+
   applyMoves() {
     const changed = this.game.apply();
     if (!changed) {
       return false;
     }
 
-    sendEventToClients({
+    this.sendEventToClients({
       type: "applyMoves",
       moves: this.game.moveHistory.at(-1),
     });
@@ -431,7 +436,7 @@ class GameServer {
     if (!changed) {
       return false;
     }
-    sendEventToClients({
+    this.sendEventToClients({
       type: "undoMoves",
     });
     return true;
@@ -442,6 +447,17 @@ class GameClient {
   constructor(playerIndex) {
     this.playerIndex = playerIndex;
     this.game = new Game();
+  }
+
+  sendEventToServer(event) {
+    console.log("sendEventToServer", event);
+    if (server) {
+      console.log("sent to local server");
+      server.handle(event);
+    } else {
+      console.log("sent to remote server");
+      sendData({ target: "server", event: event });
+    }
   }
 
   handle(event) {
@@ -480,22 +496,6 @@ const recieveData = (data) => {
     default:
       break;
   }
-};
-
-const sendEventToServer = (event) => {
-  console.log("sendEventToServer", event);
-  if (server) {
-    console.log("sent to local server");
-    server.handle(event);
-  } else {
-    console.log("sent to remote server");
-    sendData({ target: "server", event: event });
-  }
-};
-
-const sendEventToClients = (event) => {
-  client.handle(event);
-  sendData({ target: "client", event: event });
 };
 
 class Game {
@@ -700,7 +700,7 @@ const keyPressed = (event) => {
       sendData({ type: "test", value: 1 });
       return;
     case "Backspace":
-      sendEventToServer({ type: "undoMove" });
+      client.sendEventToServer({ type: "undoMove" });
       return;
     case "KeyS":
     case "KeyW":
@@ -718,7 +718,7 @@ const keyPressed = (event) => {
         const positionOffset = offset(eventCode);
         const position = game.getPlayer(playerIndex).position;
 
-        sendEventToServer({
+        client.sendEventToServer({
           type: "selectMove",
           move: new Command("move", playerIndex, {
             nextPosition: position + positionOffset,
@@ -733,7 +733,7 @@ const keyPressed = (event) => {
       if (playerIndex !== client.playerIndex) {
         return;
       }
-      sendEventToServer({
+      client.sendEventToServer({
         type: "selectMove",
         move: new Command("attack", playerIndex, {
           attackRange: 1,
