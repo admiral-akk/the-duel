@@ -3,6 +3,10 @@
   padding: 0;
 }
 
+.offer {
+  pointer-events: all;
+}
+
 .container {
   position: absolute;
   top: 0;
@@ -17,7 +21,7 @@
 
 .ui {
   position: absolute /* needs to be important for fullscreen */ !important;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 html,

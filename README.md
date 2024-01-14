@@ -11,3 +11,4 @@ Resources
 
 Three.js: https://threejs-journey.com/
 WebRTC: https://webrtcforthecurious.com/
+WebRTC Signalling: https://mac-blog.org.ua/webrtc-one-to-one-without-signaling-server/

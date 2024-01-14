@@ -295,166 +295,75 @@ const initLoadingAnimation = () => {
   }
 };
 
+// STUN server gives you a list of candidates (names) that can be used to reach you.
+// It doesn't actually provide networking.
+// It just does some network magics to figure out how to appropriately address your client
+// from the outside.
 /**
  * Networking
  */
-let pc;
-let sendChannel;
-let receiveChannel;
+let channel = null;
+const offerIn = document.querySelector("#offerIn");
+const offerOut = document.querySelector("#offerOut");
 
-const signaling = new BroadcastChannel("webrtc2124");
-signaling.onmessage = (e) => {
-  switch (e.data.type) {
-    case "offer":
-      handleOffer(e.data);
-      break;
-    case "answer":
-      handleAnswer(e.data);
-      break;
-    case "candidate":
-      handleCandidate(e.data);
-      break;
-    case "ready":
-      // A second tab joined. This tab will enable the start button unless in a call already.
-      if (pc) {
-        console.log("already in call, ignoring");
-        return;
-      }
-      break;
-    case "bye":
-      if (pc) {
-        hangup();
-      }
-      break;
-    default:
-      console.log("unhandled", e);
-      break;
-  }
+const connection = new RTCPeerConnection({
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+});
+
+connection.ondatachannel = (event) => {
+  console.log("ondatachannel", event);
+  channel = event.channel;
+  channel.onopen = (event) => console.log("onopen", event);
+  channel.onmessage = (event) => console.log("onmessage", event);
 };
 
-const connect = async () => {
-  await createPeerConnection();
-  sendChannel = pc.createDataChannel("sendDataChannel");
-  sendChannel.onopen = onSendChannelStateChange;
-  sendChannel.onmessage = onSendChannelMessageCallback;
-  sendChannel.onclose = onSendChannelStateChange;
+connection.onconnectionstatechange = (event) =>
+  console.log("onconnectionstatechange", event);
+connection.oniceconnectionstatechange = (event) =>
+  console.log("oniceconnectionstatechange", event);
 
-  const offer = await pc.createOffer();
-  console.log("proposed offer", offer.sdp);
-  signaling.postMessage({ type: "offer", sdp: offer.sdp });
-  await pc.setLocalDescription(offer);
-  console.log("set description");
-};
+async function createOffer() {
+  channel = connection.createDataChannel("data");
+  channel.onopen = (event) => console.log("onopen", event);
+  channel.onmessage = (event) => console.log("onmessage", event);
 
-const close = async () => {
-  hangup();
-  signaling.postMessage({ type: "bye" });
-};
-
-async function hangup() {
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-  sendChannel = null;
-  receiveChannel = null;
-  console.log("Closed peer connections");
-}
-
-function createPeerConnection() {
-  console.log("createPeerConnection");
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
-  });
-  pc.onicecandidate = (e) => {
-    console.log("onicecandidate", e);
-    const message = {
-      type: "candidate",
-      candidate: null,
-    };
-    if (e.candidate) {
-      message.candidate = e.candidate.candidate;
-      message.sdpMid = e.candidate.sdpMid;
-      message.sdpMLineIndex = e.candidate.sdpMLineIndex;
+  connection.onicecandidate = (event) => {
+    console.log("onicecandidate", event);
+    if (!event.candidate) {
+      console.log("localDescription", connection.localDescription);
+      offerOut.value = btoa(JSON.stringify(connection.localDescription));
     }
-    signaling.postMessage(message);
   };
+
+  const offer = await connection.createOffer();
+  await connection.setLocalDescription(offer);
 }
 
-async function handleOffer(offer) {
-  console.log("handle offer", offer.sdp);
-  return;
-  if (pc) {
-    console.error("existing peerconnection");
-    return;
-  }
-  await createPeerConnection();
-  pc.ondatachannel = receiveChannelCallback;
-  await pc.setRemoteDescription(offer);
+async function acceptRemoteOffer() {
+  const offer = JSON.parse(atob(offerIn.value));
+  console.log("acceptRemoteOffer", offer);
+  await connection.setRemoteDescription(offer);
+  connection.onicecandidate = (event) => {
+    console.log("onicecandidate", event);
+    if (!event.candidate) {
+      offerOut.value = btoa(JSON.stringify(connection.localDescription));
+    }
+  };
 
-  const answer = await pc.createAnswer();
-  signaling.postMessage({ type: "answer", sdp: answer.sdp });
-  await pc.setLocalDescription(answer);
+  const answer = await connection.createAnswer();
+  await connection.setLocalDescription(answer);
 }
 
-async function handleAnswer(answer) {
-  if (!pc) {
-    console.error("no peerconnection");
-    return;
-  }
-  await pc.setRemoteDescription(answer);
+async function acceptAnswer() {
+  const answer = JSON.parse(atob(offerIn.value));
+  await connection.setRemoteDescription(answer);
 }
-
-async function handleCandidate(candidate) {
-  console.log("handleCandidate", candidate);
-  return;
-  if (!pc) {
-    console.error("no peerconnection");
-    return;
-  }
-  if (!candidate.candidate) {
-    await pc.addIceCandidate(null);
-  } else {
-    await pc.addIceCandidate(candidate);
-  }
-}
-
 let iter = 1;
 
 function sendData() {
   iter++;
-  if (sendChannel) {
-    sendChannel.send(iter);
-  } else {
-    receiveChannel.send(iter);
-  }
+  channel.send(iter);
   console.log("Sent Data: " + iter);
-}
-
-function receiveChannelCallback(event) {
-  console.log("Receive Channel Callback", event.data);
-  receiveChannel = event.channel;
-  receiveChannel.onmessage = onReceiveChannelMessageCallback;
-  receiveChannel.onopen = onReceiveChannelStateChange;
-  receiveChannel.onclose = onReceiveChannelStateChange;
-}
-
-function onReceiveChannelMessageCallback(event) {
-  console.log("Received onReceiveChannelMessageCallback", event.data);
-}
-
-function onSendChannelMessageCallback(event) {
-  console.log("Received onSendChannelMessageCallback", event.data);
-}
-
-function onSendChannelStateChange() {
-  const readyState = sendChannel.readyState;
-  console.log("Send channel state is: " + readyState);
-}
-
-function onReceiveChannelStateChange() {
-  const readyState = receiveChannel.readyState;
-  console.log(`Receive channel state is: ${readyState}`);
 }
 
 /**
@@ -648,9 +557,18 @@ const keyPressed = (event) => {
   const playerIndex = player(eventCode);
   switch (eventCode) {
     case "Digit1":
-      connect();
+      createOffer();
       return;
     case "Digit2":
+      acceptRemoteOffer();
+      return;
+    case "Digit3":
+      acceptAnswer();
+      return;
+    case "Digit4":
+      sendData();
+      return;
+    case "Digit5":
       sendData();
       return;
     case "Backspace":
