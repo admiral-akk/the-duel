@@ -311,22 +311,34 @@ const connection = new RTCPeerConnection({
 });
 
 connection.ondatachannel = (event) => {
-  console.log("ondatachannel", event);
+  console.log("ondatachannel1", event);
   channel = event.channel;
-  channel.onopen = (event) => console.log("onopen", event);
-  channel.onmessage = (event) => console.log("onmessage", event);
+  channel.onopen = (event) => console.log("onopen1", event);
+  channel.onmessage = (event) => {
+    console.log("onmessage", event);
+    recieveData(event.data);
+  };
 };
 
 connection.onconnectionstatechange = (event) =>
   console.log("onconnectionstatechange", event);
-connection.oniceconnectionstatechange = (event) =>
+connection.oniceconnectionstatechange = (event) => {
   console.log("oniceconnectionstatechange", event);
+  if (event.target && event.target.connectionState === "connected") {
+    client.playerIndex = server ? 0 : 1;
+  }
+};
 
 async function createOffer() {
+  server = new GameServer();
   channel = connection.createDataChannel("data");
-  channel.onopen = (event) => console.log("onopen", event);
-  channel.onmessage = (event) => console.log("onmessage", event);
-
+  // channel.onopen = event => console.log('onopen', event)
+  // channel.onmessage = event => console.log('onmessage', event)
+  channel.onopen = (event) => console.log("onopen1", event);
+  channel.onmessage = (event) => {
+    console.log("onmessage", event);
+    recieveData(event.data);
+  };
   connection.onicecandidate = (event) => {
     console.log("onicecandidate", event);
     if (!event.candidate) {
@@ -358,12 +370,10 @@ async function acceptAnswer() {
   const answer = JSON.parse(atob(offerIn.value));
   await connection.setRemoteDescription(answer);
 }
-let iter = 1;
 
-function sendData() {
-  iter++;
-  channel.send(iter);
-  console.log("Sent Data: " + iter);
+function sendData(data) {
+  channel.send(JSON.stringify(data));
+  console.log("Sent Data: ", data);
 }
 
 /**
@@ -379,6 +389,111 @@ loadFont("helvetiker_regular.typeface");
  * Game Rules
  */
 
+// This represents the actual state of the game - each player sends messages to it and recieves updates from it for their local client.
+class GameServer {
+  constructor() {
+    this.game = new Game();
+  }
+
+  handle(event) {
+    switch (event.type) {
+      case "selectMove":
+        this.game.selectedMoves.set(event.move.playerIndex, event.move);
+        this.applyMoves();
+        break;
+      case "undoMove":
+        this.undoMoves();
+        break;
+      default:
+        break;
+    }
+  }
+
+  applyMoves() {
+    const changed = this.game.apply();
+    if (!changed) {
+      return false;
+    }
+
+    sendEventToClients({
+      type: "applyMoves",
+      moves: this.game.moveHistory.at(-1),
+    });
+    return true;
+  }
+
+  undoMoves() {
+    const changed = this.game.undo();
+    if (!changed) {
+      return false;
+    }
+    sendEventToClients({
+      type: "undoMoves",
+    });
+    return true;
+  }
+}
+
+class GameClient {
+  constructor(playerIndex) {
+    this.playerIndex = playerIndex;
+    this.game = new Game();
+  }
+
+  handle(event) {
+    switch (event.type) {
+      case "applyMoves":
+        console.log("applyMoves", event.moves);
+        this.game.applyMoves(event.moves);
+        break;
+      case "undoMoves":
+        console.log("undoMoves");
+        this.game.undo();
+        break;
+      default:
+        console.log(event);
+        throw new Error("Unknown client event");
+    }
+  }
+}
+const recieveData = (data) => {
+  console.log("recieveData", data);
+  const parsedData = JSON.parse(data);
+  console.log("parsedData", parsedData);
+  switch (parsedData.target) {
+    case "server":
+      console.log("server event!");
+      if (!server) {
+        throw new Error("Has no server!");
+      }
+      server.handle(parsedData.event);
+      break;
+    case "client":
+      console.log("client event!");
+      console.log("client data", parsedData.event);
+      client.handle(parsedData.event);
+      break;
+    default:
+      break;
+  }
+};
+
+const sendEventToServer = (event) => {
+  console.log("sendEventToServer", event);
+  if (server) {
+    console.log("sent to local server");
+    server.handle(event);
+  } else {
+    console.log("sent to remote server");
+    sendData({ target: "server", event: event });
+  }
+};
+
+const sendEventToClients = (event) => {
+  client.handle(event);
+  sendData({ target: "client", event: event });
+};
+
 class Game {
   constructor() {
     this.state = new GameState();
@@ -386,28 +501,37 @@ class Game {
     this.selectedMoves = new Map();
   }
 
+  applyMoves(moves) {
+    console.log("apply Moves", moves);
+    console.log("state", this);
+    moves.forEach((m) => this.selectedMoves.set(m.playerIndex, m));
+    this.apply();
+  }
+
   apply() {
     const m0 = this.selectedMoves.get(0);
     const m1 = this.selectedMoves.get(1);
     if (!m0 || !m1) {
-      return;
+      return false;
     }
     const moves = [m0, m1];
     this.selectedMoves.clear();
     this.state.apply(moves);
     this.moveHistory.push(moves);
+    return true;
   }
 
   undo() {
     this.selectedMoves.clear();
     const moves = this.moveHistory.pop();
     if (!moves) {
-      return;
+      return false;
     }
     this.state.undo(moves);
+    return true;
   }
 
-  player(index) {
+  getPlayer(index) {
     return this.state.players[index];
   }
 }
@@ -428,7 +552,7 @@ class GameState {
     // apply every move
     // moves shouldn't change things, just indicate intention
     moves.forEach((m, i) =>
-      m.applyMove(this.players[i], this.players[(i + 1) % 2])
+      applyMove(m, this.players[i], this.players[(i + 1) % 2])
     );
 
     // keep players in bounds
@@ -446,7 +570,7 @@ class GameState {
 
     // resolve damage
     moves.forEach((m, i) =>
-      m.applyAttack(this.players[i], this.players[(i + 1) % 2])
+      applyAttack(m, this.players[i], this.players[(i + 1) % 2])
     );
 
     // resolve damage
@@ -459,7 +583,9 @@ class GameState {
   }
 
   undo(moves) {
-    moves.forEach((m, i) => m.undo(this.players[i], this.players[(i + 1) % 2]));
+    moves.forEach((m, i) =>
+      undoCommand(m, this.players[i], this.players[(i + 1) % 2])
+    );
   }
 }
 
@@ -472,49 +598,50 @@ class Player {
   }
 }
 
+const applyMove = (move, player, opponent) => {
+  switch (move.type) {
+    case "move":
+      player.nextPosition = move.params.nextPosition;
+      return;
+    default:
+      return;
+  }
+};
+
+const applyAttack = (attack, player, opponent) => {
+  switch (attack.type) {
+    case "attack":
+      const distance = Math.abs(player.position - opponent.position);
+      opponent.isHit = distance === attack.params.attackRange;
+      return;
+    default:
+      return;
+  }
+};
+
+const undoCommand = (command, player, opponent) => {
+  switch (command.type) {
+    case "move":
+      player.position = command.params.position;
+      return;
+    case "attack":
+      opponent.health = command.params.health;
+      opponent.isHit = false;
+      return;
+    default:
+      return;
+  }
+};
+
 class Command {
-  constructor(type, params) {
+  constructor(type, playerIndex, params) {
     this.type = type;
+    this.playerIndex = playerIndex;
     this.params = params;
-  }
-
-  applyMove(player, opponent) {
-    switch (this.type) {
-      case "move":
-        player.nextPosition = this.params.nextPosition;
-        return;
-      default:
-        return;
-    }
-  }
-
-  applyAttack(player, opponent) {
-    switch (this.type) {
-      case "attack":
-        const distance = Math.abs(player.position - opponent.position);
-        opponent.isHit = distance === this.params.attackRange;
-        return;
-      default:
-        return;
-    }
-  }
-
-  undo(player, opponent) {
-    switch (this.type) {
-      case "move":
-        player.position = this.params.position;
-        return;
-      case "attack":
-        opponent.health = this.params.health;
-        opponent.isHit = false;
-        return;
-      default:
-        return;
-    }
   }
 }
 
-const player = (eventCode) => {
+const getPlayer = (eventCode) => {
   switch (eventCode) {
     case "KeyW":
     case "KeyA":
@@ -554,7 +681,7 @@ const offset = (eventCode) => {
 const keyPressed = (event) => {
   const eventCode = event.code;
   console.log(eventCode);
-  const playerIndex = player(eventCode);
+  const playerIndex = getPlayer(eventCode);
   switch (eventCode) {
     case "Digit1":
       createOffer();
@@ -566,13 +693,10 @@ const keyPressed = (event) => {
       acceptAnswer();
       return;
     case "Digit4":
-      sendData();
-      return;
-    case "Digit5":
-      sendData();
+      sendData({ type: "test", value: 1 });
       return;
     case "Backspace":
-      game.undo();
+      sendEventToServer({ type: "undoMove" });
       return;
     case "KeyS":
     case "KeyW":
@@ -584,31 +708,34 @@ const keyPressed = (event) => {
     case "ArrowRight":
       {
         const positionOffset = offset(eventCode);
-        const position = game.player(playerIndex).position;
-        game.selectedMoves.set(
-          playerIndex,
-          new Command("move", {
+        const position = game.getPlayer(playerIndex).position;
+
+        sendEventToServer({
+          type: "selectMove",
+          move: new Command("move", playerIndex, {
             nextPosition: position + positionOffset,
             position: position,
-          })
-        );
+          }),
+        });
       }
       break;
     case "Space":
     case "Enter":
-      game.selectedMoves.set(
-        playerIndex,
-        new Command("attack", {
+      sendEventToServer({
+        type: "selectMove",
+        move: new Command("attack", playerIndex, {
           attackRange: 1,
-        })
-      );
+        }),
+      });
       return;
     default:
       return;
   }
 };
 
-const game = new Game();
+let server = null;
+const client = new GameClient(-1);
+const game = client.game;
 
 /**
  * Game Graphics
@@ -662,9 +789,9 @@ const tiles = Array(game.state.arenaSize)
 
 const animateGame = (elapsedTime, deltaTime) => {
   leftPlayer.position.x =
-    game.player(0).position - (game.state.arenaSize - 1) / 2;
+    game.getPlayer(0).position - (game.state.arenaSize - 1) / 2;
   rightPlayer.position.x =
-    game.player(1).position - (game.state.arenaSize - 1) / 2;
+    game.getPlayer(1).position - (game.state.arenaSize - 1) / 2;
 };
 
 /**
