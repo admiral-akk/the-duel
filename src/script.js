@@ -323,13 +323,23 @@ class WebRTCClient {
     this.connection = new RTCPeerConnection({
       iceServers: iceServers,
     });
+    this.connection.ondatachannel = (event) => {
+      console.log("ondatachannel", event);
+      this.dataChannel = event.channel;
+      this.dataChannel.onopen = (event) => console.log("onopen", event);
+      this.dataChannel.onmessage = (event) => {
+        console.log("onmessage", event);
+        recieveData(event.data);
+      };
+      this.dataChannel.onclose = (event) => console.log("onclose", event);
+    };
     this.dataChannel = this.connection.createDataChannel("data");
-
     this.dataChannel.onopen = (event) => console.log("onopen", event);
     this.dataChannel.onmessage = (event) => {
       console.log("onmessage", event);
-      //recieveData(event.data);
+      recieveData(event.data);
     };
+    this.dataChannel.onclose = (event) => console.log("onclose", event);
 
     this.connection.onconnectionstatechange = (event) => {
       console.log("onconnectionstatechange", event);
@@ -372,17 +382,25 @@ class WebRTCClient {
         this.otherCandidates.push(c);
         this.connection.addIceCandidate(c);
       });
+      this.candidates.length = 0;
+      this.connection.onicecandidate = (event) => {
+        console.log("onicecandidate", event);
+        if (event.candidate) {
+          this.candidates.push(event.candidate);
+        } else {
+          const answerMsg = {
+            hostId: getHostId(),
+            offer: this.offer,
+            candidates: this.candidates,
+          };
+          console.log("emit - answer", answerMsg);
+          this.socket.emit("answer", answerMsg);
+          this.state = "SentAnswer";
+        }
+      };
 
       this.offer = await this.connection.createAnswer();
       await this.connection.setLocalDescription(this.offer);
-      const answerMsg = {
-        hostId: getHostId(),
-        offer: this.offer,
-        candidates: this.candidates,
-      };
-      console.log("emit - answer", answerMsg);
-      this.socket.emit("answer", answerMsg);
-      this.state = "SentAnswer";
     });
 
     // if we get an answer back, store the candidates we get.
@@ -397,6 +415,7 @@ class WebRTCClient {
         this.connection.addIceCandidate(c);
       });
       this.state = "RecievedAnswer";
+      server = new GameServer();
     });
   }
 
@@ -435,7 +454,7 @@ function sendData(data) {
   console.log("Sent Data: ", data);
 }
 
-await rtcClient.connect();
+rtcClient.connect();
 
 /**
  * Loaded Objects
