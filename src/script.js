@@ -15,6 +15,7 @@ import loadingVertexShader from "./shaders/loading/vertex.glsl";
 import loadingFragmentShader from "./shaders/loading/fragment.glsl";
 import matcapVertexShader from "./shaders/matcap/vertex.glsl";
 import matcapFragmentShader from "./shaders/matcap/fragment.glsl";
+import { io } from "socket.io-client";
 
 /**
  * Helpers
@@ -302,79 +303,139 @@ const initLoadingAnimation = () => {
 /**
  * Networking
  */
-let channel = null;
-const offerIn = document.querySelector("#offerIn");
-const offerOut = document.querySelector("#offerOut");
-
-const connection = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-});
-
-connection.ondatachannel = (event) => {
-  console.log("ondatachannel1", event);
-  channel = event.channel;
-  channel.onopen = (event) => console.log("onopen1", event);
-  channel.onmessage = (event) => {
-    console.log("onmessage", event);
-    recieveData(event.data);
-  };
+const getHostId = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get("hostId");
 };
 
-connection.onconnectionstatechange = (event) => {
-  console.log("onconnectionstatechange", event);
-  if (event.target && event.target.connectionState === "connected") {
-    client.playerIndex = server ? 0 : 1;
+const setHostId = (hostId) => {
+  const url = new URL(window.location);
+  url.searchParams.set("hostId", hostId);
+  window.history.pushState(null, "", url.toString());
+};
+
+// none ->
+//
+class WebRTCClient {
+  constructor(socketUrl, iceServers) {
+    this.state = "FetchingCandidates";
+    this.socket = io(socketUrl);
+    this.connection = new RTCPeerConnection({
+      iceServers: iceServers,
+    });
+    this.dataChannel = this.connection.createDataChannel("data");
+
+    this.dataChannel.onopen = (event) => console.log("onopen", event);
+    this.dataChannel.onmessage = (event) => {
+      console.log("onmessage", event);
+      //recieveData(event.data);
+    };
+
+    this.connection.onconnectionstatechange = (event) => {
+      console.log("onconnectionstatechange", event);
+      if (event.target && event.target.connectionState === "connected") {
+        client.playerIndex = server ? 0 : 1;
+        this.state = "Connected";
+        console.log(this);
+        this.socket.disconnect();
+      }
+    };
+
+    this.connection.oniceconnectionstatechange = (event) =>
+      console.log("oniceconnectionstatechange", event);
+
+    this.candidates = [];
+    this.offer = null;
+    this.otherCandidates = [];
+    this.otherOffer = null;
+
+    // the lobby was created
+    this.socket.on("lobby", (msg) => {
+      console.log("lobby message", msg);
+      // we're already in this lobby
+      if (msg.hostId === getHostId()) {
+        return;
+      }
+      this.otherCandidates.length = 0;
+      this.otherOffer = null;
+      setHostId(msg.hostId);
+      this.state = "WaitingForAnswer";
+    });
+
+    // offer to connect send on connection attempt
+    this.socket.on("offer", async (msg) => {
+      console.log("offer message", msg);
+      this.otherOffer = msg.offer;
+      await this.connection.setRemoteDescription(this.otherOffer);
+      this.otherCandidates.length = 0;
+      msg.candidates.forEach((c) => {
+        this.otherCandidates.push(c);
+        this.connection.addIceCandidate(c);
+      });
+
+      this.offer = await this.connection.createAnswer();
+      await this.connection.setLocalDescription(this.offer);
+      const answerMsg = {
+        hostId: getHostId(),
+        offer: this.offer,
+        candidates: this.candidates,
+      };
+      console.log("emit - answer", answerMsg);
+      this.socket.emit("answer", answerMsg);
+      this.state = "SentAnswer";
+    });
+
+    // if we get an answer back, store the candidates we get.
+    this.socket.on("answer", async (msg) => {
+      console.log("answer message", msg);
+      msg.hostId = getHostId();
+      this.otherCandidates.length = 0;
+      msg.candidates.forEach((c) => this.otherCandidates.push(c));
+      this.otherOffer = msg.offer;
+      await this.connection.setRemoteDescription(this.otherOffer);
+      this.otherCandidates.forEach(async (c) => {
+        this.connection.addIceCandidate(c);
+      });
+      this.state = "RecievedAnswer";
+    });
   }
-};
-connection.oniceconnectionstatechange = (event) =>
-  console.log("oniceconnectionstatechange", event);
 
-async function createOffer() {
-  server = new GameServer();
-  channel = connection.createDataChannel("data");
-  // channel.onopen = event => console.log('onopen', event)
-  // channel.onmessage = event => console.log('onmessage', event)
-  channel.onopen = (event) => console.log("onopen1", event);
-  channel.onmessage = (event) => {
-    console.log("onmessage", event);
-    recieveData(event.data);
-  };
-  connection.onicecandidate = (event) => {
-    console.log("onicecandidate", event);
-    if (!event.candidate) {
-      console.log("localDescription", connection.localDescription);
-      offerOut.value = btoa(JSON.stringify(connection.localDescription));
-    }
-  };
+  async connect() {
+    this.state = "Connecting";
+    console.log(this);
+    this.connection.onicecandidate = (event) => {
+      console.log("onicecandidate", event);
+      if (event.candidate) {
+        this.candidates.push(event.candidate);
+      } else {
+        // done fetching candidates
+        const joinLobbyMsg = {
+          hostId: getHostId(),
+          candidates: this.candidates,
+          offer: this.offer,
+        };
+        console.log("emit - joinLobby", joinLobbyMsg);
+        this.socket.emit("joinLobby", joinLobbyMsg);
+        this.state = "WaitingForOffer";
+      }
+    };
 
-  const offer = await connection.createOffer();
-  await connection.setLocalDescription(offer);
+    this.offer = await this.connection.createOffer();
+    await this.connection.setLocalDescription(this.offer);
+    console.log(this.offer);
+  }
 }
 
-async function acceptRemoteOffer() {
-  const offer = JSON.parse(atob(offerIn.value));
-  console.log("acceptRemoteOffer", offer);
-  await connection.setRemoteDescription(offer);
-  connection.onicecandidate = (event) => {
-    console.log("onicecandidate", event);
-    if (!event.candidate) {
-      offerOut.value = btoa(JSON.stringify(connection.localDescription));
-    }
-  };
-
-  const answer = await connection.createAnswer();
-  await connection.setLocalDescription(answer);
-}
-
-async function acceptAnswer() {
-  const answer = JSON.parse(atob(offerIn.value));
-  await connection.setRemoteDescription(answer);
-}
+const rtcClient = new WebRTCClient("http://localhost:3000/", [
+  { urls: "stun:stun.l.google.com:19302" },
+]);
 
 function sendData(data) {
-  channel.send(JSON.stringify(data));
+  rtcClient.dataChannel.send(JSON.stringify(data));
   console.log("Sent Data: ", data);
 }
+
+await rtcClient.connect();
 
 /**
  * Loaded Objects
