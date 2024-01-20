@@ -110,6 +110,29 @@ const playSound = (name) => {
 };
 
 /**
+ * Models
+ */
+
+const baseColorTexture = loadTexture("baseColor");
+baseColorTexture.flipY = false;
+var ship_material = new THREE.MeshBasicMaterial({ map: baseColorTexture });
+let mixer;
+gltfLoader.load("./models/samurai.glb", (data) => {
+  const model = data.scene;
+  scene.add(model);
+  model.traverse(function (child) {
+    if (child instanceof THREE.Mesh) {
+      child.material = ship_material;
+    }
+  });
+  mixer = new THREE.AnimationMixer(model);
+  const clips = data.animations;
+  const clip = THREE.AnimationClip.findByName(clips, "walk");
+  const action = mixer.clipAction(clip);
+  action.play();
+});
+
+/**
  * Window size
  */
 const sizes = {
@@ -903,6 +926,9 @@ const tick = () => {
 
   // Render scene
   animateGame();
+  if (mixer) {
+    mixer.update(timeTracker.deltaTime);
+  }
   composer.render();
 
   // Call tick again on the next frame

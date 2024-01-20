@@ -4,6 +4,7 @@ Credits
 
 Font(s): https://github.com/mrdoob/three.js/tree/dev/examples/fonts
 Matcap Material(s): https://github.com/nidorx/matcaps
+Base Color(s): https://imphenzia.com/assets
 Sword Swoosh(s): https://freesound.org/people/Artninja/packs/39091/
 WebRTC Networking: https://webrtc.github.io/samples
 
