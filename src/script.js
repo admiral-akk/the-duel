@@ -8,6 +8,7 @@ import "webrtc-adapter";
 import GUI from "lil-gui";
 import { gsap } from "gsap";
 import Stats from "stats-js";
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
@@ -47,7 +48,10 @@ document.body.appendChild(stats.dom);
  * Loader Setup
  */
 
+THREE.Cache.enabled = true;
 const loadingManager = new THREE.LoadingManager();
+loadingManager.hasFiles = false;
+loadingManager.onStart = () => (loadingManager.hasFiles = true);
 const textureLoader = new THREE.TextureLoader(loadingManager);
 const dracoLoader = new DRACOLoader(loadingManager);
 const audioLoader = new THREE.AudioLoader(loadingManager);
@@ -115,22 +119,44 @@ const playSound = (name) => {
 
 const baseColorTexture = loadTexture("baseColor");
 baseColorTexture.flipY = false;
-gltfLoader.load("./models/samurai.glb", (data) => {
-  const model = data.scene;
+const models = new Map();
+
+const loadModel = (name, texture) => {
+  gltfLoader.load(`./models/${name}.glb`, (data) => {
+    const model = data.scene;
+    model.traverse(function (child) {
+      if (child instanceof THREE.Mesh) {
+        child.material = new THREE.MeshBasicMaterial({ map: texture });
+      }
+    });
+    model.animations = data.animations;
+    models.set(name, model);
+  });
+};
+
+const getModel = (name) => {
+  if (!models.has(name)) {
+    return null;
+  }
+  const rawModel = models.get(name);
+
+  const model = SkeletonUtils.clone(rawModel);
+  scene.add(model);
 
   model.mixer = new THREE.AnimationMixer(model);
-  model.mixer.clips = data.animations;
-  scene.add(model);
-  model.traverse(function (child) {
-    if (child instanceof THREE.Mesh) {
-      child.material = new THREE.MeshBasicMaterial({ map: baseColorTexture });
-    }
-  });
+  model.mixer.clips = rawModel.animations;
+  model.mixer.playAnimation = (name, loopMode = THREE.LoopRepeat) => {
+    model.mixer.stopAllAction();
+    const clip = THREE.AnimationClip.findByName(model.mixer.clips, name);
+    const action = model.mixer.clipAction(clip);
+    action.setLoop(loopMode);
+    action.play();
+  };
+  model.mixer.playAnimation("walk");
+  return model;
+};
 
-  const clip = THREE.AnimationClip.findByName(model.mixer.clips, "walk");
-  const action = model.mixer.clipAction(clip);
-  action.play();
-});
+loadModel("samurai", baseColorTexture);
 
 /**
  * Window size
@@ -284,6 +310,7 @@ const updateProgress = (progress) => {
     value: progressRatio,
   });
   if (progressRatio == 1) {
+    gameGraphics.spawnMeshes();
     currAnimation.kill();
     const timeline = gsap.timeline();
     currAnimation = timeline.to(loadingUniforms.uMaxX, {
@@ -311,10 +338,10 @@ const updateProgress = (progress) => {
 };
 
 const initLoadingAnimation = () => {
-  if (loadingManager.itemsTotal > 0) {
-    loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
-      updateProgress(itemsLoaded / itemsTotal);
-  } else {
+  loadingManager.onProgress = (_, itemsLoaded, itemsTotal) => {
+    updateProgress(itemsLoaded / itemsTotal);
+  };
+  if (!loadingManager.hasFiles) {
     updateProgress(1);
   }
 };
@@ -856,24 +883,6 @@ const game = client.game;
  * Game Graphics
  */
 
-const playerMesh = (matcapTexture) => {
-  const geo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-  const mat = new THREE.ShaderMaterial({
-    vertexShader: matcapVertexShader,
-    fragmentShader: matcapFragmentShader,
-    uniforms: {
-      uMatcap: {
-        type: "sampler2D",
-        value: matcapTexture,
-      },
-    },
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.rotation.y = Math.PI / 4;
-  scene.add(mesh);
-  return mesh;
-};
-
 const tileMesh = (matcapTexture) => {
   const geo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
   const mat = new THREE.ShaderMaterial({
@@ -891,32 +900,43 @@ const tileMesh = (matcapTexture) => {
   return mesh;
 };
 
-const leftPlayer = playerMesh(textures.get("matcap01"));
-const rightPlayer = playerMesh(textures.get("matcap02"));
-const tiles = Array(game.state.arenaSize)
-  .fill(0)
-  .map((_, i) => {
-    const mesh = tileMesh(textures.get("matcap03"));
-    mesh.position.x = i - (game.state.arenaSize - 1) / 2;
-    mesh.position.y = -0.4;
-    return mesh;
-  });
+class GameGraphics {
+  constructor(game) {
+    this.game = game;
+    this.players = [];
+    this.tiles = [];
+  }
 
-const animateMixer = (elapsedTime, deltaTime) => {
-  scene.traverse(function (child) {
-    if (child.mixer) {
-      child.mixer.update(deltaTime);
-    }
-  });
-};
+  spawnMeshes() {
+    this.players.push(getModel("samurai"));
+    this.players.push(getModel("samurai"));
+    console.log("players", this.players);
 
-const animateGame = (elapsedTime, deltaTime) => {
-  leftPlayer.position.x =
-    game.getPlayer(0).position - (game.state.arenaSize - 1) / 2;
-  rightPlayer.position.x =
-    game.getPlayer(1).position - (game.state.arenaSize - 1) / 2;
-  animateMixer(elapsedTime, deltaTime);
-};
+    this.tiles = Array(game.state.arenaSize)
+      .fill(0)
+      .map((_, i) => {
+        const mesh = tileMesh(textures.get("matcap03"));
+        mesh.position.x = i - (game.state.arenaSize - 1) / 2;
+        mesh.position.y = -0.4;
+        return mesh;
+      });
+  }
+
+  animateGame = (elapsedTime, deltaTime) => {
+    this.players.forEach((mesh, i) => {
+      mesh.position.x =
+        game.getPlayer(i).position - (game.state.arenaSize - 1) / 2;
+      mesh.lookAt(new THREE.Vector3(-100 * i, 0, 0));
+    });
+    scene.traverse(function (child) {
+      if (child.mixer) {
+        child.mixer.update(deltaTime);
+      }
+    });
+  };
+}
+
+const gameGraphics = new GameGraphics(client.game);
 
 /**
  * Animation
@@ -934,13 +954,12 @@ const tick = () => {
   game.apply();
 
   // Render scene
-  animateGame(timeTracker.elapsedTime, timeTracker.deltaTime);
+  gameGraphics.animateGame(timeTracker.elapsedTime, timeTracker.deltaTime);
   composer.render();
 
   // Call tick again on the next frame
   window.requestAnimationFrame(tick);
   stats.end();
 };
-
 initLoadingAnimation();
 tick();
