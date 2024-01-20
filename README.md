@@ -13,3 +13,7 @@ Resources
 Three.js: https://threejs-journey.com/
 WebRTC: https://webrtcforthecurious.com/
 WebRTC Signalling: https://mac-blog.org.ua/webrtc-one-to-one-without-signaling-server/
+
+Art Inspriration
+
+Samurai: https://oldmanofthefire.com/ (specifically: https://twitter.com/oldmanofthefire/status/1716682303630623195)

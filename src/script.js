@@ -115,20 +115,20 @@ const playSound = (name) => {
 
 const baseColorTexture = loadTexture("baseColor");
 baseColorTexture.flipY = false;
-var ship_material = new THREE.MeshBasicMaterial({ map: baseColorTexture });
-let mixer;
 gltfLoader.load("./models/samurai.glb", (data) => {
   const model = data.scene;
+
+  model.mixer = new THREE.AnimationMixer(model);
+  model.mixer.clips = data.animations;
   scene.add(model);
   model.traverse(function (child) {
     if (child instanceof THREE.Mesh) {
-      child.material = ship_material;
+      child.material = new THREE.MeshBasicMaterial({ map: baseColorTexture });
     }
   });
-  mixer = new THREE.AnimationMixer(model);
-  const clips = data.animations;
-  const clip = THREE.AnimationClip.findByName(clips, "walk");
-  const action = mixer.clipAction(clip);
+
+  const clip = THREE.AnimationClip.findByName(model.mixer.clips, "walk");
+  const action = model.mixer.clipAction(clip);
   action.play();
 });
 
@@ -902,11 +902,20 @@ const tiles = Array(game.state.arenaSize)
     return mesh;
   });
 
+const animateMixer = (elapsedTime, deltaTime) => {
+  scene.traverse(function (child) {
+    if (child.mixer) {
+      child.mixer.update(deltaTime);
+    }
+  });
+};
+
 const animateGame = (elapsedTime, deltaTime) => {
   leftPlayer.position.x =
     game.getPlayer(0).position - (game.state.arenaSize - 1) / 2;
   rightPlayer.position.x =
     game.getPlayer(1).position - (game.state.arenaSize - 1) / 2;
+  animateMixer(elapsedTime, deltaTime);
 };
 
 /**
@@ -917,18 +926,15 @@ const tick = () => {
   stats.begin();
 
   timeTracker.timeSpeed = document.hasFocus() ? debugObject.timeSpeed : 0;
-  timeTracker.deltaTime = clock.getDelta();
-  timeTracker.elapsedTime += timeTracker.timeSpeed * timeTracker.deltaTime;
+  timeTracker.deltaTime = timeTracker.timeSpeed * clock.getDelta();
+  timeTracker.elapsedTime += timeTracker.deltaTime;
 
   // update controls
   controls.update();
   game.apply();
 
   // Render scene
-  animateGame();
-  if (mixer) {
-    mixer.update(timeTracker.deltaTime);
-  }
+  animateGame(timeTracker.elapsedTime, timeTracker.deltaTime);
   composer.render();
 
   // Call tick again on the next frame
