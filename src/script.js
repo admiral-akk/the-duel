@@ -935,7 +935,7 @@ class GameGraphics {
     this.players.forEach((mesh, i) => {
       mesh.position.x =
         game.getPlayer(i).position - (game.state.arenaSize - 1) / 2;
-      mesh.lookAt(new THREE.Vector3(-100 * i, 0, 0));
+      mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
     });
     scene.traverse(function (child) {
       if (child.mixer) {
