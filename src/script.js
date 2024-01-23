@@ -495,16 +495,24 @@ class WebRTCClient {
   }
 }
 
-const rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
-  { urls: "stun:stun.l.google.com:19302" },
-]);
+/**
+ * Params
+ */
 
+let rtcClient = null;
 function sendData(data) {
   rtcClient.dataChannel.send(JSON.stringify(data));
   console.log("Sent Data: ", data);
 }
 
-rtcClient.connect();
+const urlParams = new URLSearchParams(window.location.search);
+const localMode = urlParams.get("localMode");
+if (!localMode) {
+  rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
+    { urls: "stun:stun.l.google.com:19302" },
+  ]);
+  rtcClient.connect();
+}
 
 /**
  * Loaded Objects
@@ -545,7 +553,9 @@ class GameServer {
 
   sendEventToClients(event) {
     client.handle(event);
-    sendData({ target: "client", event: event });
+    if (rtcClient) {
+      sendData({ target: "client", event: event });
+    }
   }
 
   applyMoves() {
@@ -841,8 +851,7 @@ const keyPressed = (event) => {
     case "ArrowLeft":
     case "ArrowRight":
       {
-        console.log(playerIndex, client.playerIndex);
-        if (playerIndex !== client.playerIndex) {
+        if (rtcClient && playerIndex !== client.playerIndex) {
           return;
         }
         const positionOffset = offset(eventCode);
@@ -875,7 +884,7 @@ const keyPressed = (event) => {
   }
 };
 
-let server = null;
+let server = rtcClient ? null : new GameServer();
 const client = new GameClient(-1);
 const game = client.game;
 
