@@ -152,7 +152,7 @@ const getModel = (name) => {
     action.setLoop(loopMode);
     action.play();
   };
-  model.mixer.playAnimation("walk");
+  model.mixer.playAnimation("slash");
   return model;
 };
 
@@ -495,7 +495,7 @@ class WebRTCClient {
   }
 }
 
-const rtcClient = new WebRTCClient("http://localhost:3000/", [
+const rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
   { urls: "stun:stun.l.google.com:19302" },
 ]);
 
