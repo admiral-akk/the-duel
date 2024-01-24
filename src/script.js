@@ -147,12 +147,11 @@ const getModel = (name) => {
   model.mixer.clips = rawModel.animations;
   model.mixer.playAnimation = (name, loopMode = THREE.LoopRepeat) => {
     model.mixer.stopAllAction();
-    const clip = THREE.AnimationClip.findByName(model.mixer.clips, name);
-    const action = model.mixer.clipAction(clip);
+    const action = model.mixer.clipAction(name);
     action.setLoop(loopMode);
     action.play();
   };
-  model.mixer.playAnimation("slash");
+  model.mixer.playAnimation("walk.low");
   return model;
 };
 
@@ -649,7 +648,10 @@ class Game {
     console.log("apply Moves", moves);
     console.log("state", this);
     moves.forEach((m) => this.selectedMoves.set(m.playerIndex, m));
-    this.apply();
+  }
+
+  lastAction(playerIndex) {
+    return this.moveHistory[this.moveHistory.length - 1][playerIndex];
   }
 
   apply() {
@@ -677,6 +679,68 @@ class Game {
 
   getPlayer(index) {
     return this.state.players[index];
+  }
+
+  attackCommand(playerIndex, moveType) {
+    const player = this.getPlayer(playerIndex);
+    let attackRange = 1;
+    switch (moveType) {
+      case "HighAttack":
+        if (player.stance === "low") {
+          attackRange = -1;
+        } else {
+          attackRange = 3;
+        }
+        break;
+      case "NeutralAttack":
+        break;
+      case "LowAttack":
+        if (player.stance === "high") {
+          attackRange = -1;
+        } else {
+          attackRange = 2;
+        }
+        break;
+      default:
+        throw new Error("Unknown attack type");
+    }
+
+    return new Command("attack", playerIndex, {
+      name: moveType,
+      attackRange: attackRange,
+    });
+  }
+
+  stanceCommand(playerIndex) {
+    const player = this.getPlayer(playerIndex);
+    const nextStance = player.stance === "high" ? "low" : "high";
+    return new Command("changeStance", playerIndex, {
+      name: "ChangeStance",
+      stance: player.stance,
+      nextStance: nextStance,
+    });
+  }
+
+  moveCommand(playerIndex, moveType) {
+    let offset = Math.sign(0.5 - playerIndex);
+    const player = this.getPlayer(playerIndex);
+    switch (moveType) {
+      case "Charge":
+        offset *= 2;
+        break;
+      case "Retreat":
+        offset *= -1;
+        break;
+      case "Forward":
+        break;
+      default:
+        throw new Error("Unknown command!");
+    }
+    return new Command("move", playerIndex, {
+      name: moveType,
+      nextPosition: player.position + offset,
+      position: player.position,
+    });
   }
 }
 
@@ -735,6 +799,7 @@ class GameState {
 
 class Player {
   constructor(start) {
+    this.stance = "high";
     this.position = start;
     this.nextPosition = null;
     this.health = 2;
@@ -822,6 +887,23 @@ const offset = (eventCode) => {
   }
 };
 
+const eventToCommandType = (eventCode) => {
+  switch (eventCode) {
+    case "ArrowRight":
+    case "KeyA":
+      return "Retreat";
+    case "ArrowUp":
+    case "ArrowDown":
+    case "KeyW":
+    case "KeyS":
+      return "Charge";
+    case "ArrowLeft":
+    case "KeyD":
+    default:
+      return "Forward";
+  }
+};
+
 const keyPressed = (event) => {
   const eventCode = event.code;
   console.log(eventCode);
@@ -854,29 +936,24 @@ const keyPressed = (event) => {
         if (rtcClient && playerIndex !== client.playerIndex) {
           return;
         }
-        const positionOffset = offset(eventCode);
-        const position = game.getPlayer(playerIndex).position;
-
+        const moveType = eventToCommandType(eventCode);
+        const move = game.moveCommand(playerIndex, moveType);
         client.sendEventToServer({
           type: "selectMove",
-          move: new Command("move", playerIndex, {
-            nextPosition: position + positionOffset,
-            position: position,
-          }),
+          move: move,
         });
       }
       break;
     case "Space":
     case "Enter":
       console.log(playerIndex, client.playerIndex);
-      if (playerIndex !== client.playerIndex) {
+      if (rtcClient && playerIndex !== client.playerIndex) {
         return;
       }
+      const move = game.attackCommand(playerIndex, "NeutralAttack");
       client.sendEventToServer({
         type: "selectMove",
-        move: new Command("attack", playerIndex, {
-          attackRange: 1,
-        }),
+        move: move,
       });
       return;
     default:
@@ -931,11 +1008,30 @@ class GameGraphics {
       });
   }
 
-  animateGame = (elapsedTime, deltaTime) => {
+  animateGame = (elapsedTime, deltaTime, moved) => {
     this.players.forEach((mesh, i) => {
-      mesh.position.x =
-        game.getPlayer(i).position - (game.state.arenaSize - 1) / 2;
+      const player = game.getPlayer(i);
+      mesh.position.x = player.position - (game.state.arenaSize - 1) / 2;
       mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
+      if (moved) {
+        const move = game.lastAction(i);
+        console.log("Move:", move);
+        switch (move.type) {
+          case "attack":
+            if (player.stance === "high") {
+              mesh.mixer.playAnimation("slash.high");
+            } else {
+              mesh.mixer.playAnimation("slash.low");
+            }
+            break;
+          default:
+            if (player.stance === "high") {
+              mesh.mixer.playAnimation("walk.high");
+            } else {
+              mesh.mixer.playAnimation("walk.low");
+            }
+        }
+      }
     });
     scene.traverse(function (child) {
       if (child.mixer) {
@@ -960,10 +1056,14 @@ const tick = () => {
 
   // update controls
   controls.update();
-  game.apply();
+  const moved = game.apply();
 
   // Render scene
-  gameGraphics.animateGame(timeTracker.elapsedTime, timeTracker.deltaTime);
+  gameGraphics.animateGame(
+    timeTracker.elapsedTime,
+    timeTracker.deltaTime,
+    moved
+  );
   composer.render();
 
   // Call tick again on the next frame
