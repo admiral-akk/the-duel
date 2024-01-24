@@ -757,6 +757,12 @@ class GameState {
   }
 
   apply(moves) {
+    // apply stance change
+
+    moves.forEach((m, i) =>
+      applyStance(m, this.players[i], this.players[(i + 1) % 2])
+    );
+
     // apply every move
     // moves shouldn't change things, just indicate intention
     moves.forEach((m, i) =>
@@ -807,6 +813,16 @@ class Player {
   }
 }
 
+const applyStance = (move, player, opponent) => {
+  switch (move.type) {
+    case "changeStance":
+      player.stance = move.params.nextStance;
+      return;
+    default:
+      return;
+  }
+};
+
 const applyMove = (move, player, opponent) => {
   switch (move.type) {
     case "move":
@@ -837,6 +853,8 @@ const undoCommand = (command, player, opponent) => {
       opponent.health = command.params.health;
       opponent.isHit = false;
       return;
+    case "changeStance":
+      player.stance = command.params.stance;
     default:
       return;
   }
@@ -869,33 +887,13 @@ const getPlayer = (eventCode) => {
   }
 };
 
-const offset = (eventCode) => {
-  switch (eventCode) {
-    case "ArrowUp":
-    case "ArrowDown":
-    case "KeyW":
-    case "KeyS":
-      return 0;
-    case "ArrowLeft":
-    case "KeyA":
-      return -1;
-    case "ArrowRight":
-    case "KeyD":
-      return 1;
-    default:
-      return 0;
-  }
-};
-
-const eventToCommandType = (eventCode) => {
+const eventToMoveType = (eventCode) => {
   switch (eventCode) {
     case "ArrowRight":
     case "KeyA":
       return "Retreat";
     case "ArrowUp":
-    case "ArrowDown":
     case "KeyW":
-    case "KeyS":
       return "Charge";
     case "ArrowLeft":
     case "KeyD":
@@ -921,22 +919,33 @@ const keyPressed = (event) => {
     case "Digit4":
       sendData({ type: "test", value: 1 });
       return;
+    case "ArrowDown":
+    case "KeyS":
+      {
+        if (rtcClient && playerIndex !== client.playerIndex) {
+          return;
+        }
+        const move = game.stanceCommand(playerIndex);
+        client.sendEventToServer({
+          type: "selectMove",
+          move: move,
+        });
+      }
+      break;
     case "Backspace":
       client.sendEventToServer({ type: "undoMove" });
       return;
-    case "KeyS":
     case "KeyW":
     case "KeyA":
     case "KeyD":
     case "ArrowUp":
-    case "ArrowDown":
     case "ArrowLeft":
     case "ArrowRight":
       {
         if (rtcClient && playerIndex !== client.playerIndex) {
           return;
         }
-        const moveType = eventToCommandType(eventCode);
+        const moveType = eventToMoveType(eventCode);
         const move = game.moveCommand(playerIndex, moveType);
         client.sendEventToServer({
           type: "selectMove",
