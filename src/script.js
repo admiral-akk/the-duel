@@ -254,11 +254,11 @@ for (const key in canvas) {
 /**
  * Setup camera
  */
-camera.position.y = 1;
-camera.position.z = 1.5;
+camera.position.y = 1.5;
+camera.position.z = 2.5;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enabled = true;
+controls.enabled = false;
 
 /**
  * Debug
@@ -1051,6 +1051,81 @@ class GameGraphics {
 }
 
 const gameGraphics = new GameGraphics(client.game);
+
+/**
+ *
+ */
+
+const topActionMenu = document.createElement("div");
+topActionMenu.setAttribute("class", "topActionMenu");
+ui.appendChild(topActionMenu);
+const actionMenu = document.createElement("div");
+actionMenu.setAttribute("class", "actionMenu");
+ui.appendChild(actionMenu);
+const makeActionButton = (parent, text, onClick) => {
+  const b = document.createElement("button");
+  b.setAttribute("class", "actionButton");
+  b.textContent = text;
+  b.onclick = onClick;
+  parent.appendChild(b);
+};
+makeActionButton(topActionMenu, "Neutral Attack", () => {
+  const move = game.attackCommand(0, "NeutralAttack");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(topActionMenu, "Retreat", () => {
+  const move = game.moveCommand(0, "Retreat");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(topActionMenu, "Advance", () => {
+  console.log("Hellp");
+  const move = game.moveCommand(0, "Forward");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(topActionMenu, "Charge", () => {
+  const move = game.moveCommand(0, "Charge");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(actionMenu, "Neutral Attack", () => {
+  const move = game.attackCommand(1, "NeutralAttack");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(actionMenu, "Retreat", () => {
+  const move = game.moveCommand(1, "Retreat");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(actionMenu, "Advance", () => {
+  const move = game.moveCommand(1, "Forward");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(actionMenu, "Charge", () => {
+  const move = game.moveCommand(1, "Charge");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
 
 /**
  * Animation
