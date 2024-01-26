@@ -1012,8 +1012,12 @@ class GameGraphics {
   }
 
   animateGame = (elapsedTime, deltaTime, moved) => {
+    let gameEnded = false;
     this.players.forEach((mesh, i) => {
       const player = game.getPlayer(i);
+      if (player.health === 0) {
+        gameEnded = true;
+      }
       health[i].innerHTML = `Health: ${player.health}`;
       mesh.position.x =
         0.7 * (player.position - (game.state.arenaSize - 1) / 2);
@@ -1043,6 +1047,26 @@ class GameGraphics {
         child.mixer.update(deltaTime);
       }
     });
+    if (!hasEnded && gameEnded) {
+      hasEnded = true;
+      const greyed = document.createElement("div");
+      greyed.setAttribute("class", "greyed");
+      overlay.appendChild(greyed);
+      const menu = document.createElement("div");
+      menu.setAttribute("class", "menu");
+      greyed.appendChild(menu);
+      const textMenu = document.createElement("div");
+      textMenu.setAttribute("class", "textMenu");
+      textMenu.innerHTML = "GAME OVER";
+      menu.appendChild(textMenu);
+      const buttonHolder = document.createElement("div");
+      buttonHolder.setAttribute("class", "buttonHolder");
+      menu.appendChild(buttonHolder);
+      const reset = document.createElement("button");
+      reset.setAttribute("class", "reset");
+      reset.textContent = "Reset";
+      buttonHolder.appendChild(reset);
+    }
   };
 }
 
@@ -1058,6 +1082,11 @@ ui.appendChild(topActionMenu);
 const actionMenu = document.createElement("div");
 actionMenu.setAttribute("class", "actionMenu");
 ui.appendChild(actionMenu);
+
+let hasEnded = false;
+const overlay = document.createElement("div");
+overlay.setAttribute("class", "overlay");
+ui.appendChild(overlay);
 
 const makeHealthTracker = (parent, playerIndex) => {
   const d = document.createElement("div");
