@@ -1057,84 +1057,39 @@ ui.appendChild(topActionMenu);
 const actionMenu = document.createElement("div");
 actionMenu.setAttribute("class", "actionMenu");
 ui.appendChild(actionMenu);
-const makeActionButton = (parent, text, onClick) => {
+const makeActionButton = (parent, playerIndex, text, moveName) => {
   const b = document.createElement("button");
   b.setAttribute("class", "actionButton");
   b.textContent = text;
-  b.onclick = onClick;
+  b.onclick = () => {
+    let move;
+    switch (moveName) {
+      case "SwitchAttack":
+      case "NeutralAttack":
+        move = game.attackCommand(playerIndex, moveName);
+        break;
+      default:
+        move = game.moveCommand(playerIndex, moveName);
+        break;
+    }
+    client.sendEventToServer({
+      type: "selectMove",
+      move: move,
+    });
+  };
   parent.appendChild(b);
 };
-makeActionButton(topActionMenu, "Switch Attack", () => {
-  const move = game.attackCommand(0, "SwitchAttack");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(topActionMenu, "Neutral Attack", () => {
-  const move = game.attackCommand(0, "NeutralAttack");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(topActionMenu, "Retreat", () => {
-  const move = game.moveCommand(0, "Retreat");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(topActionMenu, "Advance", () => {
-  console.log("Hellp");
-  const move = game.moveCommand(0, "Forward");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(topActionMenu, "Charge", () => {
-  const move = game.moveCommand(0, "Charge");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(actionMenu, "Switch Attack", () => {
-  const move = game.attackCommand(1, "SwitchAttack");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(actionMenu, "Neutral Attack", () => {
-  const move = game.attackCommand(1, "NeutralAttack");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(actionMenu, "Retreat", () => {
-  const move = game.moveCommand(1, "Retreat");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(actionMenu, "Advance", () => {
-  const move = game.moveCommand(1, "Forward");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
-makeActionButton(actionMenu, "Charge", () => {
-  const move = game.moveCommand(1, "Charge");
-  client.sendEventToServer({
-    type: "selectMove",
-    move: move,
-  });
-});
+
+makeActionButton(topActionMenu, 0, "Switch Attack", "SwitchAttack");
+makeActionButton(topActionMenu, 0, "Neutral Attack", "NeutralAttack");
+makeActionButton(topActionMenu, 0, "Retreat", "Retreat");
+makeActionButton(topActionMenu, 0, "Advance", "Forward");
+makeActionButton(topActionMenu, 0, "Charge", "Charge");
+makeActionButton(actionMenu, 1, "Switch Attack", "SwitchAttack");
+makeActionButton(actionMenu, 1, "Neutral Attack", "NeutralAttack");
+makeActionButton(actionMenu, 1, "Retreat", "Retreat");
+makeActionButton(actionMenu, 1, "Advance", "Forward");
+makeActionButton(actionMenu, 1, "Charge", "Charge");
 
 /**
  * Animation
