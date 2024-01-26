@@ -1014,6 +1014,7 @@ class GameGraphics {
   animateGame = (elapsedTime, deltaTime, moved) => {
     this.players.forEach((mesh, i) => {
       const player = game.getPlayer(i);
+      health[i].innerHTML = `Health: ${player.health}`;
       mesh.position.x =
         0.7 * (player.position - (game.state.arenaSize - 1) / 2);
       mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
@@ -1057,6 +1058,14 @@ ui.appendChild(topActionMenu);
 const actionMenu = document.createElement("div");
 actionMenu.setAttribute("class", "actionMenu");
 ui.appendChild(actionMenu);
+
+const makeHealthTracker = (parent, playerIndex) => {
+  const d = document.createElement("div");
+  d.setAttribute("class", "health");
+  d.innerHTML = "Health: 2";
+  parent.appendChild(d);
+  return d;
+};
 const makeActionButton = (parent, playerIndex, text, moveName) => {
   const b = document.createElement("button");
   b.setAttribute("class", "actionButton");
@@ -1080,11 +1089,14 @@ const makeActionButton = (parent, playerIndex, text, moveName) => {
   parent.appendChild(b);
 };
 
+const health = [];
+health.push(makeHealthTracker(topActionMenu, 0));
 makeActionButton(topActionMenu, 0, "Switch Attack", "SwitchAttack");
 makeActionButton(topActionMenu, 0, "Neutral Attack", "NeutralAttack");
 makeActionButton(topActionMenu, 0, "Retreat", "Retreat");
 makeActionButton(topActionMenu, 0, "Advance", "Forward");
 makeActionButton(topActionMenu, 0, "Charge", "Charge");
+health.push(makeHealthTracker(actionMenu, 1));
 makeActionButton(actionMenu, 1, "Switch Attack", "SwitchAttack");
 makeActionButton(actionMenu, 1, "Neutral Attack", "NeutralAttack");
 makeActionButton(actionMenu, 1, "Retreat", "Retreat");
