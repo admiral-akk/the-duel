@@ -684,22 +684,12 @@ class Game {
   attackCommand(playerIndex, moveType) {
     const player = this.getPlayer(playerIndex);
     let attackRange = 1;
+    let nextStance = player.stance;
     switch (moveType) {
-      case "HighAttack":
-        if (player.stance === "low") {
-          attackRange = -1;
-        } else {
-          attackRange = 3;
-        }
-        break;
+      case "SwitchAttack":
+        nextStance = player.stance === "high" ? "low" : "high";
+        attackRange = player.stance === "high" ? 3 : 2;
       case "NeutralAttack":
-        break;
-      case "LowAttack":
-        if (player.stance === "high") {
-          attackRange = -1;
-        } else {
-          attackRange = 2;
-        }
         break;
       default:
         throw new Error("Unknown attack type");
@@ -708,6 +698,8 @@ class Game {
     return new Command("attack", playerIndex, {
       name: moveType,
       attackRange: attackRange,
+      stance: player.stance,
+      nextStance: nextStance,
     });
   }
 
@@ -748,11 +740,11 @@ class Game {
 // it does not care how you got here.
 class GameState {
   constructor() {
-    this.arenaSize = 6;
+    this.arenaSize = 8;
     const mid = (this.arenaSize - 1) / 2;
     this.players = [
-      new Player(Math.floor(mid) - 1),
-      new Player(Math.ceil(mid) + 1),
+      new Player(Math.floor(mid) - 2),
+      new Player(Math.ceil(mid) + 2),
     ];
   }
 
@@ -838,6 +830,7 @@ const applyAttack = (attack, player, opponent) => {
     case "attack":
       const distance = Math.abs(player.position - opponent.position);
       opponent.isHit = distance === attack.params.attackRange;
+      player.stance = attack.params.nextStance;
       return;
     default:
       return;
@@ -852,6 +845,7 @@ const undoCommand = (command, player, opponent) => {
     case "attack":
       opponent.health = command.params.health;
       opponent.isHit = false;
+      player.stance = command.params.stance;
       return;
     case "changeStance":
       player.stance = command.params.stance;
@@ -979,7 +973,7 @@ const game = client.game;
  */
 
 const tileMesh = (matcapTexture) => {
-  const geo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
+  const geo = new THREE.BoxGeometry(0.2, 0.1, 0.5);
   const mat = new THREE.ShaderMaterial({
     vertexShader: matcapVertexShader,
     fragmentShader: matcapFragmentShader,
@@ -1011,7 +1005,7 @@ class GameGraphics {
       .fill(0)
       .map((_, i) => {
         const mesh = tileMesh(textures.get("matcap03"));
-        mesh.position.x = i - (game.state.arenaSize - 1) / 2;
+        mesh.position.x = 0.7 * (i - (game.state.arenaSize - 1) / 2);
         mesh.position.y = -0.4;
         return mesh;
       });
@@ -1020,7 +1014,8 @@ class GameGraphics {
   animateGame = (elapsedTime, deltaTime, moved) => {
     this.players.forEach((mesh, i) => {
       const player = game.getPlayer(i);
-      mesh.position.x = player.position - (game.state.arenaSize - 1) / 2;
+      mesh.position.x =
+        0.7 * (player.position - (game.state.arenaSize - 1) / 2);
       mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
       if (moved) {
         const move = game.lastAction(i);
@@ -1057,7 +1052,7 @@ const gameGraphics = new GameGraphics(client.game);
  */
 
 const topActionMenu = document.createElement("div");
-topActionMenu.setAttribute("class", "topActionMenu");
+topActionMenu.setAttribute("class", "actionMenu");
 ui.appendChild(topActionMenu);
 const actionMenu = document.createElement("div");
 actionMenu.setAttribute("class", "actionMenu");
@@ -1069,6 +1064,13 @@ const makeActionButton = (parent, text, onClick) => {
   b.onclick = onClick;
   parent.appendChild(b);
 };
+makeActionButton(topActionMenu, "Switch Attack", () => {
+  const move = game.attackCommand(0, "SwitchAttack");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
 makeActionButton(topActionMenu, "Neutral Attack", () => {
   const move = game.attackCommand(0, "NeutralAttack");
   client.sendEventToServer({
@@ -1093,6 +1095,13 @@ makeActionButton(topActionMenu, "Advance", () => {
 });
 makeActionButton(topActionMenu, "Charge", () => {
   const move = game.moveCommand(0, "Charge");
+  client.sendEventToServer({
+    type: "selectMove",
+    move: move,
+  });
+});
+makeActionButton(actionMenu, "Switch Attack", () => {
+  const move = game.attackCommand(1, "SwitchAttack");
   client.sendEventToServer({
     type: "selectMove",
     move: move,
