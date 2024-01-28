@@ -498,21 +498,6 @@ class WebRTCClient {
  * Params
  */
 
-let rtcClient = null;
-function sendData(data) {
-  rtcClient.dataChannel.send(JSON.stringify(data));
-  console.log("Sent Data: ", data);
-}
-
-const urlParams = new URLSearchParams(window.location.search);
-const localMode = urlParams.get("localMode");
-if (!localMode) {
-  rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
-    { urls: "stun:stun.l.google.com:19302" },
-  ]);
-  rtcClient.connect();
-}
-
 /**
  * Loaded Objects
  */
@@ -521,6 +506,58 @@ loadTexture("matcap02");
 loadTexture("matcap03");
 loadSound("swoosh01");
 loadFont("helvetiker_regular.typeface");
+
+/**
+ *
+ */
+// This class controls the whole game, transitioning you from between games.
+class GameManager {
+  // states:
+  // Start - just opened the page
+  // JoinLobby - try to join a lobby
+  // WaitingInLobby - have a lobbyId, waiting for someone to join
+  // Connected - connected to another player, ready to start game
+  // InGame - in the game
+  // GameOver - game ended
+  //
+  // valid transitions:
+  // Start -> JoinLobby
+  // Start -> WaitingInLobby
+  // JoinLobby -> WaitingInLobby
+  // JoinLobby -> Connected
+  // Connected -> InGame
+  // InGame -> GameOver
+  // GameOver -> InGame
+  // GameOver -> WaitingInLobby
+  constructor() {
+    this.state = "Start";
+    const localMode = urlParams.get("localMode");
+    if (!localMode) {
+      this.rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
+        { urls: "stun:stun.l.google.com:19302" },
+      ]);
+    }
+  }
+}
+
+let rtcClient = null;
+function sendData(data) {
+  if (rtcClient) {
+    rtcClient.dataChannel.send(JSON.stringify(data));
+    console.log("Sent Data: ", data);
+  } else {
+    console.log("No client to send data: ", data);
+  }
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+const localMode = true; //urlParams.get("localMode");
+if (!localMode) {
+  rtcClient = new WebRTCClient("ws://44.202.30.187:3000", [
+    { urls: "stun:stun.l.google.com:19302" },
+  ]);
+  rtcClient.connect();
+}
 
 /**
  * Game Rules
@@ -536,49 +573,36 @@ class GameServer {
     this.game = new Game();
   }
 
-  handle(event) {
-    switch (event.type) {
-      case "selectMove":
-        this.game.selectedMoves.set(event.move.playerIndex, event.move);
-        this.applyMoves();
-        break;
-      case "undoMove":
-        this.undoMoves();
-        break;
-      default:
-        break;
-    }
-  }
-
   sendEventToClients(event) {
-    client.handle(event);
+    console.log("client event", event);
+    clients.forEach((c) => c.handle(event));
     if (rtcClient) {
       sendData({ target: "client", event: event });
     }
   }
 
-  applyMoves() {
-    const changed = this.game.apply();
-    if (!changed) {
-      return false;
-    }
+  handle(event) {
+    switch (event.type) {
+      case "selectMove":
+        this.game.applyMoves(event.move[0], event.move[1]);
 
-    this.sendEventToClients({
-      type: "applyMoves",
-      moves: this.game.moveHistory.at(-1),
-    });
-    return true;
-  }
-
-  undoMoves() {
-    const changed = this.game.undo();
-    if (!changed) {
-      return false;
+        this.sendEventToClients({
+          type: "applyMoves",
+          move: event.move,
+        });
+        break;
+      case "undoMove":
+        const changed = this.game.undo();
+        if (!changed) {
+          return false;
+        }
+        this.sendEventToClients({
+          type: "undoMoves",
+        });
+        break;
+      default:
+        break;
     }
-    this.sendEventToClients({
-      type: "undoMoves",
-    });
-    return true;
   }
 }
 
@@ -586,6 +610,31 @@ class GameClient {
   constructor(playerIndex) {
     this.playerIndex = playerIndex;
     this.game = new Game();
+    this.selectedMoves = [null, null];
+    this.changed = false;
+  }
+
+  activePlayer() {
+    return this.game.activePlayer();
+  }
+
+  selectMove(move) {
+    // check if it's our turn to move
+    if (this.playerIndex !== this.activePlayer()) {
+      return;
+    }
+    this.selectedMoves[this.selectedMoves.findIndex((v) => v === null)] = {
+      playerIndex: this.playerIndex,
+      move: move,
+    };
+    if (this.selectedMoves[1]) {
+      // submit moves
+      this.sendEventToServer({
+        type: "selectMove",
+        move: this.selectedMoves,
+      });
+      this.selectedMoves = [null, null];
+    }
   }
 
   sendEventToServer(event) {
@@ -602,8 +651,8 @@ class GameClient {
   handle(event) {
     switch (event.type) {
       case "applyMoves":
-        console.log("applyMoves", event.moves);
-        this.game.applyMoves(event.moves);
+        console.log("applyMoves", event.move);
+        this.game.applyMoves(event.move[0], event.move[1]);
         break;
       case "undoMoves":
         console.log("undoMoves");
@@ -613,6 +662,15 @@ class GameClient {
         console.log(event);
         throw new Error("Unknown client event");
     }
+    this.changed = true;
+  }
+
+  hasUpdated() {
+    if (this.changed) {
+      this.changed = false;
+      return true;
+    }
+    return false;
   }
 }
 const recieveData = (data) => {
@@ -637,102 +695,53 @@ const recieveData = (data) => {
   }
 };
 
+// A command is the user's intention (ex: move forward)
+// A delta is the state was before and after (ex: there was a wall in front, no change in position)
 class Game {
   constructor() {
     this.state = new GameState();
-    this.moveHistory = [];
-    this.selectedMoves = new Map();
+    this.history = [];
+    this.nextCommands = [null, new Command(1, "Advance")];
+    this.priorityPlayer = 0;
   }
 
-  applyMoves(moves) {
-    console.log("apply Moves", moves);
-    console.log("state", this);
-    moves.forEach((m) => this.selectedMoves.set(m.playerIndex, m));
-  }
-
-  lastAction(playerIndex) {
-    return this.moveHistory[this.moveHistory.length - 1][playerIndex];
-  }
-
-  apply() {
-    const m0 = this.selectedMoves.get(0);
-    const m1 = this.selectedMoves.get(1);
-    if (!m0 || !m1) {
-      return false;
-    }
-    const moves = [m0, m1];
-    this.selectedMoves.clear();
-    this.state.apply(moves);
-    this.moveHistory.push(moves);
+  applyMoves(first, second) {
+    const activePlayer = this.activePlayer();
+    this.nextCommands[activePlayer] = first;
+    const deltas = this.state.apply(this.nextCommands);
+    this.history.push([this.nextCommands, deltas]);
+    this.nextCommands = [null, null];
+    this.nextCommands[activePlayer] = second;
+    console.log("next commands after apply", this.nextCommands);
     return true;
   }
 
-  undo() {
-    this.selectedMoves.clear();
-    const moves = this.moveHistory.pop();
-    if (!moves) {
-      return false;
+  activePlayer() {
+    return this.nextCommands.findIndex((m) => m === null);
+  }
+
+  lastCommand(playerIndex) {
+    if (this.history.length) {
+      return this.history[this.history.length - 1][0][playerIndex];
+    } else {
+      return { playerIndex: playerIndex, move: "Advance" };
     }
-    this.state.undo(moves);
+  }
+
+  undo() {
+    if (!this.history.length) {
+      return;
+    }
+    const activePlayer = this.activePlayer();
+    const [moves, deltas] = this.history.pop();
+    this.state.undo(deltas);
+    this.nextCommands = moves;
+    this.nextCommands[(activePlayer + 1) % 2] = null;
     return true;
   }
 
   getPlayer(index) {
     return this.state.players[index];
-  }
-
-  attackCommand(playerIndex, moveType) {
-    const player = this.getPlayer(playerIndex);
-    let attackRange = 1;
-    let nextStance = player.stance;
-    switch (moveType) {
-      case "SwitchAttack":
-        nextStance = player.stance === "high" ? "low" : "high";
-        attackRange = player.stance === "high" ? 3 : 2;
-      case "NeutralAttack":
-        break;
-      default:
-        throw new Error("Unknown attack type");
-    }
-
-    return new Command("attack", playerIndex, {
-      name: moveType,
-      attackRange: attackRange,
-      stance: player.stance,
-      nextStance: nextStance,
-    });
-  }
-
-  stanceCommand(playerIndex) {
-    const player = this.getPlayer(playerIndex);
-    const nextStance = player.stance === "high" ? "low" : "high";
-    return new Command("changeStance", playerIndex, {
-      name: "ChangeStance",
-      stance: player.stance,
-      nextStance: nextStance,
-    });
-  }
-
-  moveCommand(playerIndex, moveType) {
-    let offset = Math.sign(0.5 - playerIndex);
-    const player = this.getPlayer(playerIndex);
-    switch (moveType) {
-      case "Charge":
-        offset *= 2;
-        break;
-      case "Retreat":
-        offset *= -1;
-        break;
-      case "Forward":
-        break;
-      default:
-        throw new Error("Unknown command!");
-    }
-    return new Command("move", playerIndex, {
-      name: moveType,
-      nextPosition: player.position + offset,
-      position: player.position,
-    });
   }
 }
 
@@ -748,24 +757,87 @@ class GameState {
     ];
   }
 
-  apply(moves) {
-    // apply stance change
+  applyMove({ playerIndex, move }) {
+    let offset = Math.sign(0.5 - playerIndex);
+    const player = this.players[playerIndex];
+    console.log("players", this.players);
+    console.log("player", playerIndex, player);
+    player.nextPosition = player.position;
+    switch (move) {
+      case "Charge":
+        offset *= 2;
+        break;
+      case "Retreat":
+        offset *= -1;
+        break;
+      case "Advance":
+        break;
+      default:
+        return;
+    }
+    player.nextPosition += offset;
+  }
 
-    moves.forEach((m, i) =>
-      applyStance(m, this.players[i], this.players[(i + 1) % 2])
+  applyAttack({ playerIndex, move }) {
+    const player = this.players[playerIndex];
+    const opponent = this.players[(playerIndex + 1) % 2];
+    switch (move) {
+      case "SwitchAttack":
+        const distance = Math.abs(player.position - opponent.position);
+        const attackRange = player.stance === "high" ? 2 : 1;
+
+        opponent.isHit = distance === attackRange;
+        player.stance = player.stance === "high" ? "low" : "high";
+        return;
+      default:
+        return;
+    }
+  }
+
+  getPlayerStates() {
+    return Array.from(
+      this.players.map((p) => {
+        return {
+          health: p.health,
+          position: p.position,
+          stance: p.stance,
+        };
+      })
     );
+  }
+
+  setPlayerStates(states) {
+    states.forEach((s, i) => {
+      const player = this.players[i];
+      player.health = s.health;
+      player.position = s.position;
+      player.stance = s.stance;
+      player.nextPosition = s.position;
+      player.isHit = false;
+    });
+  }
+
+  apply(moves) {
+    // store state before
+    const deltas = {
+      before: this.getPlayerStates(),
+    };
 
     // apply every move
     // moves shouldn't change things, just indicate intention
     moves.forEach((m, i) =>
-      applyMove(m, this.players[i], this.players[(i + 1) % 2])
+      this.applyMove(m, this.players[i], this.players[(i + 1) % 2])
     );
 
     // keep players in bounds
     this.players.forEach((p) => {
-      p.nextPosition = p.nextPosition === null ? p.position : p.nextPosition;
-      p.nextPosition = Math.clamp(p.nextPosition, 0, this.arenaSize - 1);
+      p.nextPosition = Math.clamp(
+        p.nextPosition ?? p.position,
+        0,
+        this.arenaSize - 1
+      );
     });
+
     // resolve movement
     if (this.players[0].nextPosition < this.players[1].nextPosition) {
       this.players.forEach((p) => {
@@ -774,9 +846,9 @@ class GameState {
       });
     }
 
-    // resolve damage
+    // see who's hit
     moves.forEach((m, i) =>
-      applyAttack(m, this.players[i], this.players[(i + 1) % 2])
+      this.applyAttack(m, this.players[i], this.players[(i + 1) % 2])
     );
 
     // resolve damage
@@ -786,12 +858,13 @@ class GameState {
     });
 
     this.players.forEach((p) => console.log(p));
+
+    deltas.after = this.getPlayerStates();
+    return deltas;
   }
 
-  undo(moves) {
-    moves.forEach((m, i) =>
-      undoCommand(m, this.players[i], this.players[(i + 1) % 2])
-    );
+  undo(deltas) {
+    this.setPlayerStates(deltas.before);
   }
 }
 
@@ -805,168 +878,26 @@ class Player {
   }
 }
 
-const applyStance = (move, player, opponent) => {
-  switch (move.type) {
-    case "changeStance":
-      player.stance = move.params.nextStance;
-      return;
-    default:
-      return;
-  }
-};
-
-const applyMove = (move, player, opponent) => {
-  switch (move.type) {
-    case "move":
-      player.nextPosition = move.params.nextPosition;
-      return;
-    default:
-      return;
-  }
-};
-
-const applyAttack = (attack, player, opponent) => {
-  switch (attack.type) {
-    case "attack":
-      const distance = Math.abs(player.position - opponent.position);
-      opponent.isHit = distance === attack.params.attackRange;
-      player.stance = attack.params.nextStance;
-      return;
-    default:
-      return;
-  }
-};
-
-const undoCommand = (command, player, opponent) => {
-  switch (command.type) {
-    case "move":
-      player.position = command.params.position;
-      return;
-    case "attack":
-      opponent.health = command.params.health;
-      opponent.isHit = false;
-      player.stance = command.params.stance;
-      return;
-    case "changeStance":
-      player.stance = command.params.stance;
-    default:
-      return;
-  }
-};
-
 class Command {
-  constructor(type, playerIndex, params) {
-    this.type = type;
+  constructor(playerIndex, move) {
     this.playerIndex = playerIndex;
-    this.params = params;
+    this.move = move;
   }
 }
 
-const getPlayer = (eventCode) => {
-  switch (eventCode) {
-    case "KeyW":
-    case "KeyA":
-    case "KeyS":
-    case "KeyD":
-    case "Space":
-      return 0;
-    case "ArrowUp":
-    case "ArrowLeft":
-    case "ArrowDown":
-    case "ArrowRight":
-    case "Enter":
-      return 1;
-    default:
-      return -2;
-  }
-};
-
-const eventToMoveType = (eventCode) => {
-  switch (eventCode) {
-    case "ArrowRight":
-    case "KeyA":
-      return "Retreat";
-    case "ArrowUp":
-    case "KeyW":
-      return "Charge";
-    case "ArrowLeft":
-    case "KeyD":
-    default:
-      return "Forward";
-  }
-};
-
 const keyPressed = (event) => {
-  const eventCode = event.code;
-  console.log(eventCode);
-  const playerIndex = getPlayer(eventCode);
-  switch (eventCode) {
-    case "Digit1":
-      createOffer();
-      return;
-    case "Digit2":
-      acceptRemoteOffer();
-      return;
-    case "Digit3":
-      acceptAnswer();
-      return;
-    case "Digit4":
-      sendData({ type: "test", value: 1 });
-      return;
-    case "ArrowDown":
-    case "KeyS":
-      {
-        if (rtcClient && playerIndex !== client.playerIndex) {
-          return;
-        }
-        const move = game.stanceCommand(playerIndex);
-        client.sendEventToServer({
-          type: "selectMove",
-          move: move,
-        });
-      }
-      break;
+  switch (event.code) {
     case "Backspace":
-      client.sendEventToServer({ type: "undoMove" });
-      return;
-    case "KeyW":
-    case "KeyA":
-    case "KeyD":
-    case "ArrowUp":
-    case "ArrowLeft":
-    case "ArrowRight":
-      {
-        if (rtcClient && playerIndex !== client.playerIndex) {
-          return;
-        }
-        const moveType = eventToMoveType(eventCode);
-        const move = game.moveCommand(playerIndex, moveType);
-        client.sendEventToServer({
-          type: "selectMove",
-          move: move,
-        });
-      }
-      break;
-    case "Space":
-    case "Enter":
-      console.log(playerIndex, client.playerIndex);
-      if (rtcClient && playerIndex !== client.playerIndex) {
-        return;
-      }
-      const move = game.attackCommand(playerIndex, "NeutralAttack");
-      client.sendEventToServer({
-        type: "selectMove",
-        move: move,
-      });
+      clients[0].sendEventToServer({ type: "undoMove" });
       return;
     default:
       return;
   }
 };
 
-let server = rtcClient ? null : new GameServer();
-const client = new GameClient(-1);
-const game = client.game;
+let server = new GameServer();
+const clients = [new GameClient(0), new GameClient(1)];
+const game = clients[0].game;
 
 /**
  * Game Graphics
@@ -1018,15 +949,16 @@ class GameGraphics {
       if (player.health === 0) {
         gameEnded = true;
       }
+      active[i].innerHTML = i === game.activePlayer() ? "Active" : "Waiting";
       health[i].innerHTML = `Health: ${player.health}`;
       mesh.position.x =
         0.7 * (player.position - (game.state.arenaSize - 1) / 2);
       mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
       if (moved) {
-        const move = game.lastAction(i);
-        console.log("Move:", move);
-        switch (move.type) {
-          case "attack":
+        console.log("move history", game.history);
+        const { move } = game.lastCommand(i);
+        switch (move) {
+          case "SwitchAttack":
             if (player.stance === "high") {
               mesh.mixer.playAnimation("slash.high");
             } else {
@@ -1070,7 +1002,7 @@ class GameGraphics {
   };
 }
 
-const gameGraphics = new GameGraphics(client.game);
+const gameGraphics = new GameGraphics(game);
 
 /**
  *
@@ -1088,6 +1020,15 @@ const overlay = document.createElement("div");
 overlay.setAttribute("class", "overlay");
 ui.appendChild(overlay);
 
+const makeActiveTracker = (parent, playerIndex) => {
+  const d = document.createElement("div");
+  d.setAttribute("class", "health");
+
+  const active = clients[playerIndex].activePlayer();
+  d.innerHTML = active === playerIndex ? "Active" : "Waiting";
+  parent.appendChild(d);
+  return d;
+};
 const makeHealthTracker = (parent, playerIndex) => {
   const d = document.createElement("div");
   d.setAttribute("class", "health");
@@ -1095,41 +1036,31 @@ const makeHealthTracker = (parent, playerIndex) => {
   parent.appendChild(d);
   return d;
 };
-const makeActionButton = (parent, playerIndex, text, moveName) => {
+const makeActionButton = (parent, playerIndex, text, move) => {
   const b = document.createElement("button");
   b.setAttribute("class", "actionButton");
   b.textContent = text;
   b.onclick = () => {
-    let move;
-    switch (moveName) {
-      case "SwitchAttack":
-      case "NeutralAttack":
-        move = game.attackCommand(playerIndex, moveName);
-        break;
-      default:
-        move = game.moveCommand(playerIndex, moveName);
-        break;
-    }
-    client.sendEventToServer({
-      type: "selectMove",
-      move: move,
-    });
+    clients[playerIndex].selectMove(move);
   };
   parent.appendChild(b);
 };
 
+const active = [];
 const health = [];
+
+active.push(makeActiveTracker(topActionMenu, 0));
 health.push(makeHealthTracker(topActionMenu, 0));
 makeActionButton(topActionMenu, 0, "Switch Attack", "SwitchAttack");
-makeActionButton(topActionMenu, 0, "Neutral Attack", "NeutralAttack");
 makeActionButton(topActionMenu, 0, "Retreat", "Retreat");
-makeActionButton(topActionMenu, 0, "Advance", "Forward");
+makeActionButton(topActionMenu, 0, "Advance", "Advance");
 makeActionButton(topActionMenu, 0, "Charge", "Charge");
+
+active.push(makeActiveTracker(actionMenu, 1));
 health.push(makeHealthTracker(actionMenu, 1));
 makeActionButton(actionMenu, 1, "Switch Attack", "SwitchAttack");
-makeActionButton(actionMenu, 1, "Neutral Attack", "NeutralAttack");
 makeActionButton(actionMenu, 1, "Retreat", "Retreat");
-makeActionButton(actionMenu, 1, "Advance", "Forward");
+makeActionButton(actionMenu, 1, "Advance", "Advance");
 makeActionButton(actionMenu, 1, "Charge", "Charge");
 
 /**
@@ -1145,7 +1076,7 @@ const tick = () => {
 
   // update controls
   controls.update();
-  const moved = game.apply();
+  const moved = clients[0].hasUpdated();
 
   // Render scene
   gameGraphics.animateGame(
