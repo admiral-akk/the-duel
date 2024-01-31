@@ -145,13 +145,28 @@ const getModel = (name) => {
 
   model.mixer = new THREE.AnimationMixer(model);
   model.mixer.clips = rawModel.animations;
-  model.mixer.playAnimation = (name, loopMode = THREE.LoopRepeat) => {
+  model.mixer.playAnimation = (name, loopMode = THREE.LoopOnce) => {
     model.mixer.stopAllAction();
     const action = model.mixer.clipAction(name);
     action.setLoop(loopMode);
     action.play();
   };
   model.mixer.playAnimation("walk.low");
+  model.mixer.addEventListener("finished", (e) => {
+    switch (e.action._clip.name) {
+      case "walk.low":
+      case "walk.high":
+        e.action.reset();
+        e.action.play();
+        break;
+      case "slash.low":
+        model.mixer.playAnimation("walk.high");
+        break;
+      case "slash.high":
+        model.mixer.playAnimation("walk.low");
+        break;
+    }
+  });
   return model;
 };
 
@@ -949,8 +964,6 @@ class GameGraphics {
       if (player.health === 0) {
         gameEnded = true;
       }
-      active[i].innerHTML = i === game.activePlayer() ? "Active" : "Waiting";
-      health[i].innerHTML = `Health: ${player.health}`;
       mesh.position.x =
         0.7 * (player.position - (game.state.arenaSize - 1) / 2);
       mesh.lookAt(new THREE.Vector3(-100 * (i - 0.5), 0, 0));
@@ -960,9 +973,9 @@ class GameGraphics {
         switch (move) {
           case "SwitchAttack":
             if (player.stance === "high") {
-              mesh.mixer.playAnimation("slash.high");
-            } else {
               mesh.mixer.playAnimation("slash.low");
+            } else {
+              mesh.mixer.playAnimation("slash.high");
             }
             break;
           default:
@@ -976,7 +989,7 @@ class GameGraphics {
     });
     scene.traverse(function (child) {
       if (child.mixer) {
-        child.mixer.update(deltaTime);
+        child.mixer.update(deltaTime * 2);
       }
     });
     if (!hasEnded && gameEnded) {
@@ -1008,17 +1021,12 @@ const gameGraphics = new GameGraphics(game);
  *
  */
 
-const topActionMenu = document.createElement("div");
-topActionMenu.setAttribute("class", "actionMenu");
-ui.appendChild(topActionMenu);
-const actionMenu = document.createElement("div");
-actionMenu.setAttribute("class", "actionMenu");
-ui.appendChild(actionMenu);
-
-let hasEnded = false;
-const overlay = document.createElement("div");
-overlay.setAttribute("class", "overlay");
-ui.appendChild(overlay);
+const actionMenu = (parent) => {
+  const menu = document.createElement("div");
+  menu.setAttribute("class", "actionMenu");
+  parent.appendChild(menu);
+  return menu;
+};
 
 const makeActiveTracker = (parent, playerIndex) => {
   const d = document.createElement("div");
@@ -1044,24 +1052,57 @@ const makeActionButton = (parent, playerIndex, text, move) => {
     clients[playerIndex].selectMove(move);
   };
   parent.appendChild(b);
+  return b;
 };
 
-const active = [];
-const health = [];
+const makeOverlay = (parent) => {
+  const menu = document.createElement("div");
+  menu.setAttribute("class", "overlay");
+  parent.appendChild(menu);
+};
+let hasEnded = false;
+class GameUI {
+  update(game) {
+    this.activeTrackers.forEach(
+      (a, i) => (a.innerHTML = i === game.activePlayer() ? "Active" : "Waiting")
+    );
+    this.healthTrackers.forEach(
+      (h, i) => (h.innerHTML = `Health: ${game.getPlayer(i).health}`)
+    );
+  }
+  constructor(game, root) {
+    this.game = game;
+    this.root = root;
+    this.overlay = makeOverlay(root);
+    this.activeTrackers = [];
+    this.healthTrackers = [];
+    this.actions = [];
+    this.game.state.players.forEach((_, i) => {
+      const menu = actionMenu(root);
+      this.activeTrackers.push(makeActiveTracker(menu, i));
+      this.healthTrackers.push(makeHealthTracker(menu, i));
+      this.actions.push(new Map());
+      this.actions[i].set(
+        "SwitchAttack",
+        makeActionButton(menu, i, "Switch Attack", "SwitchAttack")
+      );
+      this.actions[i].set(
+        "Retreat",
+        makeActionButton(menu, i, "Retreat", "Retreat")
+      );
+      this.actions[i].set(
+        "Advance",
+        makeActionButton(menu, i, "Advance", "Advance")
+      );
+      this.actions[i].set(
+        "Charge",
+        makeActionButton(menu, i, "Charge", "Charge")
+      );
+    });
+  }
+}
 
-active.push(makeActiveTracker(topActionMenu, 0));
-health.push(makeHealthTracker(topActionMenu, 0));
-makeActionButton(topActionMenu, 0, "Switch Attack", "SwitchAttack");
-makeActionButton(topActionMenu, 0, "Retreat", "Retreat");
-makeActionButton(topActionMenu, 0, "Advance", "Advance");
-makeActionButton(topActionMenu, 0, "Charge", "Charge");
-
-active.push(makeActiveTracker(actionMenu, 1));
-health.push(makeHealthTracker(actionMenu, 1));
-makeActionButton(actionMenu, 1, "Switch Attack", "SwitchAttack");
-makeActionButton(actionMenu, 1, "Retreat", "Retreat");
-makeActionButton(actionMenu, 1, "Advance", "Advance");
-makeActionButton(actionMenu, 1, "Charge", "Charge");
+const gameUI = new GameUI(game, ui);
 
 /**
  * Animation
@@ -1077,6 +1118,7 @@ const tick = () => {
   // update controls
   controls.update();
   const moved = clients[0].hasUpdated();
+  gameUI.update(clients[0].game);
 
   // Render scene
   gameGraphics.animateGame(
