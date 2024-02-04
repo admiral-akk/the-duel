@@ -664,7 +664,8 @@ class GameClient {
 
     const firstEmptyIndex = this.selectedMoves.findIndex((v) => v === null);
     if (moveIndex >= 0) {
-      this.selectedMoves[moveIndex] = null;
+      this.selectedMoves.splice(moveIndex, 1);
+      this.selectedMoves.push(null);
     }
     // check if they've already selected 2 moves
     else if (firstEmptyIndex >= 0) {
@@ -1051,22 +1052,6 @@ const actionMenu = (parent) => {
   return menu;
 };
 
-const makeActiveTracker = (parent, playerIndex) => {
-  const d = document.createElement("div");
-  d.setAttribute("class", "health");
-
-  const active = clients[playerIndex].activePlayer();
-  d.innerHTML = active === playerIndex ? "Active" : "Waiting";
-  parent.appendChild(d);
-  return d;
-};
-const makeHealthTracker = (parent, playerIndex) => {
-  const d = document.createElement("div");
-  d.setAttribute("class", "health");
-  d.innerHTML = "Health: 2";
-  parent.appendChild(d);
-  return d;
-};
 const makeActionButton = (parent, playerIndex, text, move) => {
   const b = document.createElement("button");
   b.setAttribute("class", "actionButton");
@@ -1083,28 +1068,73 @@ const makeActionButton = (parent, playerIndex, text, move) => {
   return { button: b, counter: c };
 };
 
+const makeSubmitButton = (parent, game) => {
+  const b = document.createElement("button");
+  b.classList.add("submitButton");
+  b.textContent = "Submit";
+  b.onclick = () => {
+    clients[game.activePlayer()].selectMove("Submit");
+  };
+  parent.appendChild(b);
+
+  return { button: b };
+};
+
 const makeOverlay = (parent) => {
   const menu = document.createElement("div");
   menu.setAttribute("class", "overlay");
   parent.appendChild(menu);
 };
+
+const makeHealthBar = (parent) => {
+  const health = document.createElement("div");
+  health.classList.add("health");
+  health.innerHTML = "Health: 2";
+  parent.appendChild(health);
+  return { div: health };
+};
+
 let hasEnded = false;
 class GameUI {
   update(gameClients, game) {
-    this.activeTrackers.forEach(
-      (a, i) => (a.innerHTML = i === game.activePlayer() ? "Active" : "Waiting")
-    );
+    if (game.activePlayer() === 0) {
+      this.actingPlayerNotification.innerText = "Left to Move";
+    } else {
+      this.actingPlayerNotification.innerText = "Right to Move";
+    }
     this.healthTrackers.forEach(
-      (h, i) => (h.innerHTML = `Health: ${game.getPlayer(i).health}`)
+      (h, i) => (h.div.innerHTML = `Health: ${game.getPlayer(i).health}`)
     );
+    const selectedMoveCount = gameClients[
+      game.activePlayer()
+    ].selectedMoves.filter((v) => v !== null).length;
+    let buttonText;
+    this.submitButton.button.disabled = true;
+    switch (selectedMoveCount) {
+      case 0:
+        buttonText = "Select 2 Moves";
+        break;
+      case 1:
+        buttonText = "Select Another Move";
+        break;
+      default:
+      case 2:
+        this.submitButton.button.disabled = false;
+        buttonText = "Submit Moves";
+        break;
+    }
+
+    this.submitButton.button.textContent = buttonText;
     this.game.state.players.forEach((_, i) => {
       this.actions[i].forEach((v, k) => {
+        const button = v.button;
         const counter = v.counter;
         const classList = v.counter.classList;
         classList.remove("counter-none", "counter-1", "counter-2");
         const moveIndex = gameClients[i].selectedMoves.findIndex(
           (m) => m !== null && m.move === k
         );
+        button.disabled = i !== game.activePlayer();
         if (i !== game.activePlayer() || moveIndex < 0) {
           counter.textContent = "";
           classList.add("counter-none");
@@ -1122,13 +1152,31 @@ class GameUI {
     this.game = game;
     this.root = root;
     this.overlay = makeOverlay(root);
-    this.activeTrackers = [];
     this.healthTrackers = [];
     this.actions = [];
+    const topBar = document.createElement("div");
+    topBar.setAttribute("class", "topBar");
+    this.root.appendChild(topBar);
+    const actionDiv = document.createElement("div");
+    actionDiv.setAttribute("class", "actionContainer");
+    this.root.appendChild(actionDiv);
+    const bottomBar = document.createElement("div");
+    bottomBar.setAttribute("class", "bottomBar");
+    this.root.appendChild(bottomBar);
+
+    this.actingPlayerNotification = [];
+
+    this.healthTrackers.push(makeHealthBar(topBar));
+
+    this.actingPlayerNotification = document.createElement("div");
+    this.actingPlayerNotification.classList.add("actingPlayer");
+    topBar.appendChild(this.actingPlayerNotification);
+    this.healthTrackers.push(makeHealthBar(topBar));
+
+    this.submitButton = makeSubmitButton(bottomBar, game);
+
     this.game.state.players.forEach((_, i) => {
-      const menu = actionMenu(root);
-      this.activeTrackers.push(makeActiveTracker(menu, i));
-      this.healthTrackers.push(makeHealthTracker(menu, i));
+      const menu = actionMenu(actionDiv);
       this.actions.push(new Map());
       this.actions[i].set(
         "SwitchAttack",
@@ -1145,10 +1193,6 @@ class GameUI {
       this.actions[i].set(
         "Charge",
         makeActionButton(menu, i, "Charge", "Charge")
-      );
-      this.actions[i].set(
-        "Submit",
-        makeActionButton(menu, i, "Submit", "Submit")
       );
     });
   }
