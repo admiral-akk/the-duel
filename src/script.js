@@ -633,22 +633,41 @@ class GameClient {
     return this.game.activePlayer();
   }
 
+  submitMoves() {
+    if (this.selectedMoves.some((v) => v === null)) {
+      return false;
+    }
+    // submit moves
+    this.sendEventToServer({
+      type: "selectMove",
+      move: this.selectedMoves,
+    });
+    this.selectedMoves = [null, null];
+  }
+
   selectMove(move) {
+    if (move === "Submit") {
+      this.submitMoves();
+      return;
+    }
+
     // check if it's our turn to move
     if (this.playerIndex !== this.activePlayer()) {
       return;
     }
-    this.selectedMoves[this.selectedMoves.findIndex((v) => v === null)] = {
-      playerIndex: this.playerIndex,
-      move: move,
-    };
-    if (this.selectedMoves[1]) {
-      // submit moves
-      this.sendEventToServer({
-        type: "selectMove",
-        move: this.selectedMoves,
-      });
-      this.selectedMoves = [null, null];
+
+    // check if we've already selected this move.
+    const moveIndex = this.selectedMoves.findIndex((v) => v === move);
+    const firstEmptyIndex = this.selectedMoves.findIndex((v) => v === null);
+    if (moveIndex >= 0) {
+      this.selectedMoves[moveIndex] = null;
+    }
+    // check if they've already selected 2 moves
+    else if (firstEmptyIndex >= 0) {
+      this.selectedMoves[firstEmptyIndex] = {
+        playerIndex: this.playerIndex,
+        move: move,
+      };
     }
   }
 
@@ -989,7 +1008,7 @@ class GameGraphics {
     });
     scene.traverse(function (child) {
       if (child.mixer) {
-        child.mixer.update(deltaTime * 2);
+        child.mixer.update(deltaTime);
       }
     });
     if (!hasEnded && gameEnded) {
@@ -1097,6 +1116,10 @@ class GameUI {
       this.actions[i].set(
         "Charge",
         makeActionButton(menu, i, "Charge", "Charge")
+      );
+      this.actions[i].set(
+        "Submit",
+        makeActionButton(menu, i, "Submit", "Submit")
       );
     });
   }
