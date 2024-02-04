@@ -1045,54 +1045,40 @@ const gameGraphics = new GameGraphics(game);
  *
  */
 
-const actionMenu = (parent) => {
-  const menu = document.createElement("div");
-  menu.setAttribute("class", "actionMenu");
-  parent.appendChild(menu);
-  return menu;
+const makeDiv = (parent, classes, text = null) => {
+  const div = document.createElement("div");
+  classes.forEach((c) => div.classList.add(c));
+  div.innerHTML = text;
+  parent.appendChild(div);
+  return { div: div };
+};
+
+const makeButton = (parent, classes, text, onClick) => {
+  const button = document.createElement("button");
+  classes.forEach((c) => button.classList.add(c));
+  button.textContent = text;
+  button.onclick = onClick;
+  parent.appendChild(button);
+  return { button: button };
 };
 
 const makeActionButton = (parent, playerIndex, text, move) => {
-  const b = document.createElement("button");
-  b.setAttribute("class", "actionButton");
-  b.textContent = text;
-  b.onclick = () => {
+  const button = makeButton(parent, ["actionButton"], text, () => {
     clients[playerIndex].selectMove(move);
-  };
-  parent.appendChild(b);
-  const c = document.createElement("div");
-  c.classList.add("counter", "counter-none");
-  c.textContent = "";
-  b.appendChild(c);
+  });
+  const counter = makeDiv(button.button, ["counter"]);
 
-  return { button: b, counter: c };
+  return { button: button.button, counter: counter.div };
 };
 
-const makeSubmitButton = (parent, game) => {
-  const b = document.createElement("button");
-  b.classList.add("submitButton");
-  b.textContent = "Submit";
-  b.onclick = () => {
+const makeSubmitButton = (parent, game) =>
+  makeButton(parent, ["submitButton"], "Submit", () => {
     clients[game.activePlayer()].selectMove("Submit");
-  };
-  parent.appendChild(b);
-
-  return { button: b };
-};
-
-const makeOverlay = (parent) => {
-  const menu = document.createElement("div");
-  menu.setAttribute("class", "overlay");
-  parent.appendChild(menu);
-};
-
-const makeHealthBar = (parent) => {
-  const health = document.createElement("div");
-  health.classList.add("health");
-  health.innerHTML = "Health: 2";
-  parent.appendChild(health);
-  return { div: health };
-};
+  });
+const actionMenu = (parent) => makeDiv(parent, ["actionMenu"]);
+const makeOverlay = (parent) => makeDiv(parent, ["overlay"]);
+const makeHealthBar = (parent) => makeDiv(parent, ["health"]);
+const makeHistoricAction = (parent) => makeDiv(parent, ["historicAction"]);
 
 let hasEnded = false;
 class GameUI {
@@ -1125,6 +1111,51 @@ class GameUI {
     }
 
     this.submitButton.button.textContent = buttonText;
+
+    this.actionHistory.forEach((historyBar, i) => {
+      historyBar.forEach((action, j) => {
+        const div = action.div;
+        switch (j) {
+          case 0:
+            if (game.history.length > 1) {
+              div.innerHTML = game.history[game.history.length - 2][0][i].move;
+            } else {
+              div.innerHTML = "";
+            }
+            break;
+          case 1:
+            if (game.history.length > 0) {
+              div.innerHTML = game.history[game.history.length - 1][0][i].move;
+            } else {
+              div.innerHTML = "";
+            }
+            break;
+          case 2:
+            if (i === game.activePlayer()) {
+              div.innerHTML = (
+                gameClients[i].selectedMoves[0] ?? { move: "" }
+              ).move;
+            } else {
+              div.innerHTML = "???";
+            }
+            break;
+          case 3:
+            if (i === game.activePlayer()) {
+              div.innerHTML = (
+                gameClients[i].selectedMoves[1] ?? { move: "" }
+              ).move;
+            } else {
+              div.innerHTML = "";
+            }
+            break;
+          case 4:
+          default:
+            div.innerHTML = "";
+            break;
+        }
+      });
+    });
+
     this.game.state.players.forEach((_, i) => {
       this.actions[i].forEach((v, k) => {
         const button = v.button;
@@ -1160,6 +1191,30 @@ class GameUI {
     const actionDiv = document.createElement("div");
     actionDiv.setAttribute("class", "actionContainer");
     this.root.appendChild(actionDiv);
+
+    this.actionHistoryBar = document.createElement("div");
+    this.actionHistoryBar.classList.add("historyContainerBar");
+    this.root.appendChild(this.actionHistoryBar);
+
+    const currentActionIndicator = document.createElement("div");
+    currentActionIndicator.innerText = "Next Action";
+    currentActionIndicator.classList.add("currentActionIndicator");
+    this.actionHistoryBar.appendChild(currentActionIndicator);
+
+    const leftHistoryActionsBar = document.createElement("div");
+    leftHistoryActionsBar.classList.add("historyBar");
+    this.actionHistoryBar.appendChild(leftHistoryActionsBar);
+
+    const rightHistoryActionsBar = document.createElement("div");
+    rightHistoryActionsBar.classList.add("historyBar");
+    this.actionHistoryBar.appendChild(rightHistoryActionsBar);
+
+    this.actionHistory = [[], []];
+    for (let x = 0; x < 5; x++) {
+      this.actionHistory[0].push(makeHistoricAction(leftHistoryActionsBar));
+      this.actionHistory[1].push(makeHistoricAction(rightHistoryActionsBar));
+    }
+
     const bottomBar = document.createElement("div");
     bottomBar.setAttribute("class", "bottomBar");
     this.root.appendChild(bottomBar);
@@ -1176,7 +1231,7 @@ class GameUI {
     this.submitButton = makeSubmitButton(bottomBar, game);
 
     this.game.state.players.forEach((_, i) => {
-      const menu = actionMenu(actionDiv);
+      const menu = actionMenu(actionDiv).div;
       this.actions.push(new Map());
       this.actions[i].set(
         "SwitchAttack",
