@@ -646,6 +646,7 @@ class GameClient {
   }
 
   selectMove(move) {
+    console.log(this.selectedMoves);
     if (move === "Submit") {
       this.submitMoves();
       return;
@@ -657,7 +658,10 @@ class GameClient {
     }
 
     // check if we've already selected this move.
-    const moveIndex = this.selectedMoves.findIndex((v) => v === move);
+    const moveIndex = this.selectedMoves.findIndex(
+      (v) => v !== null && v.move === move
+    );
+
     const firstEmptyIndex = this.selectedMoves.findIndex((v) => v === null);
     if (moveIndex >= 0) {
       this.selectedMoves[moveIndex] = null;
@@ -1071,7 +1075,12 @@ const makeActionButton = (parent, playerIndex, text, move) => {
     clients[playerIndex].selectMove(move);
   };
   parent.appendChild(b);
-  return b;
+  const c = document.createElement("div");
+  c.classList.add("counter", "counter-none");
+  c.textContent = "";
+  b.appendChild(c);
+
+  return { button: b, counter: c };
 };
 
 const makeOverlay = (parent) => {
@@ -1081,13 +1090,33 @@ const makeOverlay = (parent) => {
 };
 let hasEnded = false;
 class GameUI {
-  update(game) {
+  update(gameClients, game) {
     this.activeTrackers.forEach(
       (a, i) => (a.innerHTML = i === game.activePlayer() ? "Active" : "Waiting")
     );
     this.healthTrackers.forEach(
       (h, i) => (h.innerHTML = `Health: ${game.getPlayer(i).health}`)
     );
+    this.game.state.players.forEach((_, i) => {
+      this.actions[i].forEach((v, k) => {
+        const counter = v.counter;
+        const classList = v.counter.classList;
+        classList.remove("counter-none", "counter-1", "counter-2");
+        const moveIndex = gameClients[i].selectedMoves.findIndex(
+          (m) => m !== null && m.move === k
+        );
+        if (i !== game.activePlayer() || moveIndex < 0) {
+          counter.textContent = "";
+          classList.add("counter-none");
+        } else if (moveIndex === 0) {
+          counter.textContent = "1";
+          classList.add("counter-1");
+        } else if (moveIndex === 1) {
+          counter.textContent = "2";
+          classList.add("counter-2");
+        }
+      });
+    });
   }
   constructor(game, root) {
     this.game = game;
@@ -1141,7 +1170,7 @@ const tick = () => {
   // update controls
   controls.update();
   const moved = clients[0].hasUpdated();
-  gameUI.update(clients[0].game);
+  gameUI.update(clients, clients[0].game);
 
   // Render scene
   gameGraphics.animateGame(

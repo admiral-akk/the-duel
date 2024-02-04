@@ -51,6 +51,32 @@
   background-color: rgba(0, 0, 0, 0.5);
 }
 
+.counter {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.counter-none {
+  color: rgba(0, 0, 0, 0);
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.counter-1 {
+  color: rgb(194, 194, 194);
+  background-color: yellow;
+}
+
+.counter-2 {
+  color: rgb(194, 194, 194);
+  background-color: green;
+}
+
 .menu {
   width: 40%;
   height: 20%;
@@ -73,6 +99,7 @@
 }
 
 .actionButton {
+  position: relative;
   width: 80%;
   height: 80%;
 }
