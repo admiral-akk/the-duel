@@ -1117,15 +1117,10 @@ class GameUI {
         const div = action.div;
         switch (j) {
           case 0:
-            if (game.history.length > 1) {
-              div.innerHTML = game.history[game.history.length - 2][0][i].move;
-            } else {
-              div.innerHTML = "";
-            }
-            break;
           case 1:
-            if (game.history.length > 0) {
-              div.innerHTML = game.history[game.history.length - 1][0][i].move;
+            if (game.history.length > 1 - j) {
+              div.innerHTML =
+                game.history[game.history.length - (2 - j)][0][i].move;
             } else {
               div.innerHTML = "";
             }
