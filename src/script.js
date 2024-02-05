@@ -1131,7 +1131,7 @@ class GameUI {
                 gameClients[i].selectedMoves[0] ?? { move: "" }
               ).move;
             } else {
-              div.innerHTML = "???";
+              div.innerHTML = game.history.length === 0 ? "Advance" : "???";
             }
             break;
           case 3:
